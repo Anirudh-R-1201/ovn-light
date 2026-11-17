@@ -48,14 +48,24 @@ spec:
     args:
     - |
       while true; do
-        target="$(getent ahostsv4 server.ovn-light-topology.svc.cluster.local | awk 'NR==1 {print $1}')"
-        [ -n "$target" ] && break
+        # The final dot prevents runner-specific DNS search domains being appended.
+        target="$(getent ahostsv4 server.ovn-light-topology.svc.cluster.local. | awk 'NR==1 {print $1}')"
+        if [ -n "$target" ]; then
+          printf '%s\n' "$target" > /tmp/ovn-light-target
+          break
+        fi
         sleep 1
       done
       while true; do
-        wget -q -T 2 -O /dev/null "http://$target:8080/hostname" || true
+        if wget -q -T 2 -O /dev/null "http://$target:8080/hostname"; then
+          touch /tmp/ovn-light-traffic-ok
+        fi
         sleep 0.2
       done
+    readinessProbe:
+      exec:
+        command: [/bin/sh, -c, "test -s /tmp/ovn-light-target"]
+      periodSeconds: 2
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

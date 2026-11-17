@@ -158,6 +158,9 @@ class Harness:
         assert source['node'] != dest['node'], 'Topology fixture must exercise two nodes'
         query = urllib.parse.urlencode({'network': source['network'], 'level': 'pods', 'limit': 100})
         def observed():
+            generator = self.kubectl('-n', source['namespace'], 'exec', source['pod'], '--',
+                                     '/bin/sh', '-c', 'test -f /tmp/ovn-light-traffic-ok')
+            assert generator.returncode == 0, 'Continuous HTTP traffic has not succeeded; inspect the client logs'
             self.api('refresh', {})
             graph = self.api('topology?' + query)
             members = []
