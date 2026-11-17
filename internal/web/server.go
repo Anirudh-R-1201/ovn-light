@@ -19,6 +19,7 @@ import (
 	"github.com/trozet/ovn-light/internal/policy"
 	"github.com/trozet/ovn-light/internal/routing"
 	"github.com/trozet/ovn-light/internal/topology"
+	trace "github.com/trozet/ovn-light/internal/trace"
 )
 
 //go:embed assets/*
@@ -27,6 +28,34 @@ var assets embed.FS
 func Handler(a *app.App, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
+	mux.HandleFunc("GET /api/trace/context", func(w http.ResponseWriter, r *http.Request) { respond(w, a.TraceContext(), nil) })
+	mux.HandleFunc("POST /api/trace", func(w http.ResponseWriter, r *http.Request) {
+		var request trace.Request
+		if err := decode(w, r, &request); err != nil {
+			respond(w, nil, err)
+			return
+		}
+		report, err := a.Simulate(r.Context(), request)
+		respond(w, report, err)
+	})
+	mux.HandleFunc("POST /api/trace/tcp", func(w http.ResponseWriter, r *http.Request) {
+		var request trace.Request
+		if err := decode(w, r, &request); err != nil {
+			respond(w, nil, err)
+			return
+		}
+		result, err := a.TraceCheck(r.Context(), "tcp", request, trace.Check{})
+		respond(w, result, err)
+	})
+	mux.HandleFunc("POST /api/trace/dns", func(w http.ResponseWriter, r *http.Request) {
+		var request trace.Check
+		if err := decode(w, r, &request); err != nil {
+			respond(w, nil, err)
+			return
+		}
+		result, err := a.TraceCheck(r.Context(), "dns", trace.Request{}, request)
+		respond(w, result, err)
+	})
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, a.State(), nil) })
 	mux.HandleFunc("GET /api/offload", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

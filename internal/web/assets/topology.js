@@ -150,7 +150,7 @@ function placeTopologyLabels(links,obstacles,width,height){
   label.style.left=best.p.x+'px';label.style.top=best.p.y+'px';obstacles.push(best.box);
  }
 }
-function showTopologyPod(n){topologyState.edge=null;markTopologySelection();const root=$('topology-detail');root.replaceChildren(text('h2',n.name),text('p',`${n.node||'External'} · ${networkName(n.endpoint.network)} · ${n.endpoint.role||'Role unresolved'}`,'muted'),text('p','Select an attached traffic link to inspect its observations.','note'));}
+function showTopologyPod(n){topologyState.edge=null;markTopologySelection();const root=$('topology-detail');root.replaceChildren(text('h2',n.name),text('p',`${n.node||'External'} · ${networkName(n.endpoint.network)} · ${n.endpoint.role||'Role unresolved'}`,'muted'),text('p','Select an attached traffic link to inspect its observations.','note'),button('Trace from this pod →',()=>openTrace({source:n.endpoint})));}
 async function inspectTopologyEdge(id){
  topologyState.edge=id;markTopologySelection();const q=topologyQuery(id);$('topology-detail').replaceChildren(text('p','Loading connection evidence…','muted'));
  try{const g=await api('topology?'+q);if(topologyState.edge!==id||q!==topologyQuery(id))return;const e=g.edges.find(e=>e.id===id);if(!e){$('topology-detail').replaceChildren(text('p','This link has expired from the selected window.','note'));return;}
@@ -182,6 +182,7 @@ function renderTopologyConnection(c){
  if(c.findingIDs?.length)root.append(button('Inspect drop evidence & review →',async()=>{try{state=await api('state');const f=state.findings.find(f=>c.findingIDs.includes(f.id));if(f)showDetail(f);else toast('This historical drop has expired from the current snapshot. Collect fresh evidence before reviewing a change.');}catch(e){toast(e.message)}}));
  if(!c.findingIDs?.length&&(c.source.uid||c.destination.uid))root.append(button('Review intended connection →',async()=>{try{state=await api('state');openIntent({source:c.source,destination:c.destination,protocol:c.protocol});}catch(e){toast(e.message)}}));
  const evidence=text('details','');evidence.append(text('summary',`Observation points (${list(c.observations).length} shown)`));for(const o of list(c.observations)){const row=text('div','','record');row.append(text('strong',`${o.node} · ${o.location} · ${o.verdict}${o.counterScope==='branch-input'?' · counter before conditional output':''}`),text('p',`${o.packetDelta===undefined?'Delta unavailable':count(o.packetDelta)+' packets since previous collection'} · ${o.offloaded?'offloaded':'software / unspecified'}`),text('pre',`${o.counterID}\n${o.start&&Date.parse(o.start)>0?new Date(o.start).toISOString():'Baseline unavailable'} → ${new Date(o.end).toISOString()}\n${list(o.warnings).join('\n')}`));evidence.append(row)}root.append(evidence);
+ if(c.source?.uid)root.append(button('Simulate this connection →',()=>openTrace(c)));
 }
 function renderTrafficHistory(root,points){
  const rates=points.flatMap(p=>[p.sourceBytesPerSecond,p.receiverBytesPerSecond]).filter(v=>v!==undefined);

@@ -1,0 +1,243 @@
+# tcp,reg14=0xb,vlan_tci=0x0000,dl_src=0a:58:0a:f4:01:0a,dl_dst=0a:58:0a:f4:01:01,nw_src=10.244.1.10,nw_dst=10.244.1.8,nw_tos=0,nw_ecn=0,nw_ttl=64,nw_frag=no,tp_src=49152,tp_dst=8080,tcp_flags=syn
+
+ingress(dp="ovn-light-demo-worker", inport="ovn-light-demo_client-6d7db7c9b9-rtb2x")
+------------------------------------------------------------------------------------
+ 0. ls_in_check_port_sec (northd.c:9389): 1, priority 50, uuid 55c7ef61
+    reg0[15] = check_in_port_sec();
+    next;
+ 5. ls_in_pre_acl (northd.c:5915): ip, priority 100, uuid cc8fab24
+    reg0[0] = 1;
+    next;
+ 6. ls_in_pre_lb (northd.c:6132): ip, priority 100, uuid 7dd382c8
+    reg0[2] = 1;
+    next;
+ 7. ls_in_pre_stateful (northd.c:6162): reg0[2] == 1, priority 110, uuid 9da1dcf1
+    ct_lb_mark;
+
+ct_lb_mark
+----------
+ 8. ls_in_acl_hint (northd.c:6231): ct.new && !ct.est, priority 7, uuid d5150b31
+    reg0[7] = 1;
+    reg0[9] = 1;
+    reg0[1] = 1;
+    next;
+ 9. ls_in_acl_eval (northd.c:7360): ip && !ct.est, priority 1, uuid f33ff7cf
+    next;
+11. ls_in_acl_action (northd.c:7179): 1, priority 0, uuid f16fa9c4
+    reg8[16] = 0;
+    reg8[17] = 0;
+    reg8[18] = 0;
+    next;
+13. ls_in_ct_extract (northd.c:17922): ct.new && ip, priority 100, uuid 49d75b3b
+    reg1[16..23] = ct_proto();
+    reg1[0..15] = ct_tp_dst();
+    next;
+17. ls_in_pre_hairpin (northd.c:8305): ip && ct.trk, priority 100, uuid cc1d0702
+    reg0[6] = chk_lb_hairpin();
+    reg0[12] = chk_lb_hairpin_reply();
+    next;
+20. ls_in_acl_after_lb_eval (northd.c:6881): reg8[30..31] == 0 && (((ip4.src == 10.244.0.0/16) && (ip4.dst == 10.244.0.0/16))), priority 2100, uuid 9634b0e2
+    next;
+22. ls_in_acl_after_lb_action (northd.c:7190): reg8[30..31] == 0, priority 500, uuid c3346b81
+    reg8[30..31] = 1;
+    next(20);
+22. ls_in_acl_after_lb_action (northd.c:7190): reg8[30..31] == 1, priority 500, uuid 09c243aa
+    reg8[30..31] = 2;
+    next(20);
+22. ls_in_acl_after_lb_action (northd.c:7179): 1, priority 0, uuid 430d9eb7
+    reg8[16] = 0;
+    reg8[17] = 0;
+    reg8[18] = 0;
+    reg8[30..31] = 0;
+    next;
+23. ls_in_stateful (northd.c:8245): reg0[1] == 1 && reg0[13] == 0, priority 100, uuid a3b0136b
+    ct_commit { ct_mark.blocked = 0; ct_mark.allow_established = reg0[20]; ct_label.acl_id = reg2[16..31]; };
+    next;
+30. ls_in_l2_lkup (northd.c:10363): eth.dst == { 0a:58:a9:fe:01:01, 0a:58:0a:f4:01:01 } && is_chassis_resident("cr-stor-ovn-light-demo-worker"), priority 50, uuid 5e155f81
+    outport = "stor-ovn-light-demo-worker";
+    output;
+
+egress(dp="ovn-light-demo-worker", inport="ovn-light-demo_client-6d7db7c9b9-rtb2x", outport="stor-ovn-light-demo-worker")
+-------------------------------------------------------------------------------------------------------------------------
+ 2. ls_out_pre_acl (northd.c:5754): ip && outport == "stor-ovn-light-demo-worker", priority 110, uuid df7bd590
+    next;
+ 3. ls_out_pre_lb (northd.c:5754): ip && outport == "stor-ovn-light-demo-worker", priority 110, uuid 03cbb505
+    next;
+ 5. ls_out_acl_hint (northd.c:6231): ct.new && !ct.est, priority 7, uuid c339f325
+    reg0[7] = 1;
+    reg0[9] = 1;
+    reg0[1] = 1;
+    next;
+ 6. ls_out_acl_eval (northd.c:7362): ip && !ct.est, priority 1, uuid f6939a21
+    next;
+ 8. ls_out_acl_action (northd.c:7190): reg8[30..31] == 0, priority 500, uuid d01e6cb5
+    reg8[30..31] = 1;
+    next(6);
+ 6. ls_out_acl_eval (northd.c:7362): ip && !ct.est, priority 1, uuid f6939a21
+    next;
+ 8. ls_out_acl_action (northd.c:7190): reg8[30..31] == 1, priority 500, uuid 3156fceb
+    reg8[30..31] = 2;
+    next(6);
+ 6. ls_out_acl_eval (northd.c:7362): ip && !ct.est, priority 1, uuid f6939a21
+    next;
+ 8. ls_out_acl_action (northd.c:7179): 1, priority 0, uuid 01002d0e
+    reg8[16] = 0;
+    reg8[17] = 0;
+    reg8[18] = 0;
+    reg8[30..31] = 0;
+    next;
+11. ls_out_stateful (northd.c:8250): reg0[1] == 1 && reg0[13] == 0, priority 100, uuid 96950265
+    ct_commit { ct_mark.blocked = 0; ct_mark.allow_established = reg0[20]; ct_label.acl_id = reg2[16..31]; };
+    next;
+12. ls_out_check_port_sec (northd.c:5714): 1, priority 0, uuid a5c76bcd
+    reg0[15] = check_out_port_sec();
+    next;
+13. ls_out_apply_port_sec (northd.c:5722): 1, priority 0, uuid a0c47bc2
+    output;
+    /* output to "stor-ovn-light-demo-worker", type "patch" */
+
+ingress(dp="ovn_cluster_router", inport="rtos-ovn-light-demo-worker")
+---------------------------------------------------------------------
+ 0. lr_in_admission (northd.c:13559): eth.dst == { 0a:58:a9:fe:01:01, 0a:58:0a:f4:01:01 } && inport == "rtos-ovn-light-demo-worker" && is_chassis_resident("cr-rtos-ovn-light-demo-worker"), priority 50, uuid 2d849d68
+    reg9[1] = check_pkt_larger(1414);
+    xreg0[0..47] = 0a:58:0a:f4:01:01;
+    next;
+ 1. lr_in_lookup_neighbor (northd.c:13755): 1, priority 0, uuid 1468883c
+    reg9[2] = 1;
+    next;
+ 2. lr_in_learn_neighbor (northd.c:13765): reg9[2] == 1 || reg9[3] == 0, priority 100, uuid 15a7e1df
+    mac_cache_use;
+    next;
+15. lr_in_ip_routing_pre (northd.c:14022): 1, priority 0, uuid b34d07f2
+    reg7 = 0;
+    next;
+16. lr_in_ip_routing (northd.c:11929): ip4.dst == 10.244.1.0/24, priority 198, uuid db685cc0
+    ip.ttl--;
+    reg8[0..15] = 0;
+    reg0 = ip4.dst;
+    reg5 = 10.244.1.1;
+    eth.src = 0a:58:0a:f4:01:01;
+    outport = "rtos-ovn-light-demo-worker";
+    flags.loopback = 1;
+    reg9[9] = 1;
+    next;
+17. lr_in_ip_routing_ecmp (northd.c:14035): reg8[0..15] == 0, priority 150, uuid 62609eb8
+    next;
+18. lr_in_policy (northd.c:10912): ip4.src == 10.244.0.0/16 && ip4.dst == 10.244.0.0/16, priority 102, uuid a994d54f
+    reg8[0..15] = 0;
+    next;
+19. lr_in_policy_ecmp (northd.c:14415): reg8[0..15] == 0, priority 150, uuid 787b3f2a
+    next;
+22. lr_in_arp_resolve (northd.c:14845): outport == "rtos-ovn-light-demo-worker" && reg0 == 10.244.1.8, priority 100, uuid 3b2ca9a0
+    eth.dst = 0a:58:0a:f4:01:08;
+    next;
+23. lr_in_chk_pkt_len (northd.c:13559): outport == "rtos-ovn-light-demo-worker", priority 50, uuid 68814c15
+    reg9[1] = check_pkt_larger(1414);
+    reg4[0..7] = ct_state_save();
+    /* reg4[0..7] = 33; */
+    next;
+25. lr_in_gw_redirect (northd.c:15188): outport == "rtos-ovn-light-demo-worker", priority 50, uuid 21687559
+    outport = "cr-rtos-ovn-light-demo-worker";
+    next;
+26. lr_in_network_id (northd.c:15458): 1, priority 105, uuid 666bac05
+    flags.network_id = 0;
+    next;
+28. lr_in_ecmp_stateful_egr (northd.c:15377): 1, priority 0, uuid aaf3c52d
+    output;
+    /* Replacing type "chassisredirect" outport "cr-rtos-ovn-light-demo-worker" with distributed port "rtos-ovn-light-demo-worker". */
+
+egress(dp="ovn_cluster_router", inport="rtos-ovn-light-demo-worker", outport="rtos-ovn-light-demo-worker")
+----------------------------------------------------------------------------------------------------------
+ 0. lr_out_chk_dnat_local (northd.c:17074): 1, priority 0, uuid a2dbb6d6
+    reg9[4] = 0;
+    next;
+ 6. lr_out_delivery (northd.c:15512): outport == "rtos-ovn-light-demo-worker", priority 100, uuid 9f9f6d18
+    output;
+    /* output to "rtos-ovn-light-demo-worker", type "patch" */
+
+ingress(dp="ovn-light-demo-worker", inport="stor-ovn-light-demo-worker")
+------------------------------------------------------------------------
+ 0. ls_in_check_port_sec (northd.c:5626): inport == "stor-ovn-light-demo-worker", priority 70, uuid 3539c7bd
+    reg0[18] = 1;
+    next;
+ 5. ls_in_pre_acl (northd.c:5751): ip && inport == "stor-ovn-light-demo-worker", priority 110, uuid 48fcc578
+    next;
+ 6. ls_in_pre_lb (northd.c:5751): ip && inport == "stor-ovn-light-demo-worker", priority 110, uuid cd9142ac
+    next;
+ 8. ls_in_acl_hint (northd.c:6231): ct.new && !ct.est, priority 7, uuid d5150b31
+    reg0[7] = 1;
+    reg0[9] = 1;
+    reg0[1] = 1;
+    next;
+ 9. ls_in_acl_eval (northd.c:7360): ip && !ct.est, priority 1, uuid f33ff7cf
+    next;
+11. ls_in_acl_action (northd.c:7179): 1, priority 0, uuid f16fa9c4
+    reg8[16] = 0;
+    reg8[17] = 0;
+    reg8[18] = 0;
+    next;
+13. ls_in_ct_extract (northd.c:17922): ct.new && ip, priority 100, uuid 49d75b3b
+    reg1[16..23] = ct_proto();
+    reg1[0..15] = ct_tp_dst();
+    next;
+17. ls_in_pre_hairpin (northd.c:8305): ip && ct.trk, priority 100, uuid cc1d0702
+    reg0[6] = chk_lb_hairpin();
+    reg0[12] = chk_lb_hairpin_reply();
+    next;
+20. ls_in_acl_after_lb_eval (northd.c:6881): reg8[30..31] == 0 && (((ip4.src == 10.244.0.0/16) && (ip4.dst == 10.244.0.0/16))), priority 2100, uuid 9634b0e2
+    next;
+22. ls_in_acl_after_lb_action (northd.c:7190): reg8[30..31] == 0, priority 500, uuid c3346b81
+    reg8[30..31] = 1;
+    next(20);
+22. ls_in_acl_after_lb_action (northd.c:7190): reg8[30..31] == 1, priority 500, uuid 09c243aa
+    reg8[30..31] = 2;
+    next(20);
+22. ls_in_acl_after_lb_action (northd.c:7179): 1, priority 0, uuid 430d9eb7
+    reg8[16] = 0;
+    reg8[17] = 0;
+    reg8[18] = 0;
+    reg8[30..31] = 0;
+    next;
+23. ls_in_stateful (northd.c:8245): reg0[1] == 1 && reg0[13] == 0, priority 100, uuid a3b0136b
+    ct_commit { ct_mark.blocked = 0; ct_mark.allow_established = reg0[20]; ct_label.acl_id = reg2[16..31]; };
+    next;
+30. ls_in_l2_lkup (northd.c:10375): eth.dst == 0a:58:0a:f4:01:08, priority 50, uuid 60a3fdae
+    outport = "ovn-light-demo_server-544658cd78-b8n9v";
+    output;
+
+egress(dp="ovn-light-demo-worker", inport="stor-ovn-light-demo-worker", outport="ovn-light-demo_server-544658cd78-b8n9v")
+-------------------------------------------------------------------------------------------------------------------------
+ 2. ls_out_pre_acl (northd.c:5918): ip, priority 100, uuid 197e2c63
+    reg0[0] = 1;
+    next;
+ 3. ls_out_pre_lb (northd.c:6135): ip, priority 100, uuid 4f8cc63a
+    reg0[2] = 1;
+    next;
+ 4. ls_out_pre_stateful (northd.c:6166): reg0[2] == 1, priority 110, uuid 35152e42
+    ct_lb_mark;
+
+ct_lb_mark
+----------
+ 5. ls_out_acl_hint (northd.c:6231): ct.new && !ct.est, priority 7, uuid c339f325
+    reg0[7] = 1;
+    reg0[9] = 1;
+    reg0[1] = 1;
+    next;
+ 6. ls_out_acl_eval (northd.c:7362): ip && !ct.est, priority 1, uuid f6939a21
+    next;
+ 8. ls_out_acl_action (northd.c:7190): reg8[30..31] == 0, priority 500, uuid d01e6cb5
+    reg8[30..31] = 1;
+    next(6);
+ 6. ls_out_acl_eval (northd.c:7362): ip && !ct.est, priority 1, uuid f6939a21
+    next;
+ 8. ls_out_acl_action (northd.c:7190): reg8[30..31] == 1, priority 500, uuid 3156fceb
+    reg8[30..31] = 2;
+    next(6);
+ 6. ls_out_acl_eval (northd.c:6988): reg8[30..31] == 2 && reg0[9] == 1 && (outport == @a4371955403826678838), priority 2000, uuid 29d6c5cc
+    reg8[17] = 1;
+    next;
+ 8. ls_out_acl_action (northd.c:7163): reg8[17] == 1, priority 1000, uuid 6507aac0
+    reg8[16] = 0;
+    reg8[17] = 0;
+    reg8[18] = 0;
+    reg8[30..31] = 0;

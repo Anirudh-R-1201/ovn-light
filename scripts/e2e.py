@@ -91,6 +91,38 @@ class Harness:
         assert matches, 'No attributed policy drop for the selected source and network'
         return matches[0]
 
+    def trace(self, source, dest, allowed):
+        request = {'source': source, 'destination': dest, 'protocol': 'TCP',
+                   'port': 8080, 'state': 'new', 'ovs': True}
+        expected = 'predicted-delivery' if allowed else 'predicted-drop'
+        report = self.api('trace', request)
+        if self.args.artifacts:
+            directory = Path(self.args.artifacts)
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f'trace-{expected}.json').write_text(json.dumps(report, indent=2))
+        assert report['mode'] == 'live' and report['results'][0]['status'] == expected, [(r['status'], [(s['summary'], s['raw'][-1500:]) for s in r['segments']]) for r in report['results']]
+        assert report['results'][0]['segments'][0].get('ovs'), 'Missing source OVS trace'
+        if not allowed:
+            assert any(c['type'] == 'NetpolNamespace'
+                       for segment in report['results'][0]['segments'] for c in segment['causes']), report
+        if self.args.lane == 'topology':
+            assert len(report['results'][0]['segments']) >= 2, report
+            return
+        service = self.get('service', 'server', '-n', source['namespace'])
+        request['service'] = {key: service['metadata'][key] for key in ('namespace', 'name', 'uid')}
+        request['destination'] = {}
+        request['allBackends'] = True
+        service_report = self.api('trace', request)
+        assert service_report['service']['backends'], service_report
+        assert all(r['status'] == expected for r in service_report['results']), [(r['status'], r['destination']) for r in service_report['results']]
+        assert all(r['destination']['port'] == 8080 for r in service_report['results']), service_report
+        if allowed:
+            check = self.api('trace/tcp', request)
+            assert check['success'], check
+            dns = self.api('trace/dns', {'source': source, 'service': request['service']})
+            assert dns['success'], dns
+        print(f"Trace: pod and Service predict {expected}; source OVS evidence retained.", flush=True)
+
     def baseline(self, namespace):
         objects = self.get('networkpolicy,multi-networkpolicy', '-n', namespace)['items']
         return {o['metadata']['uid']: (o['kind'], o['metadata']['name'],
@@ -122,6 +154,8 @@ class Harness:
     def policy(self, namespace, role):
         source, dest = self.eventually(lambda: self.endpoints(namespace, role))
         before = self.baseline(namespace)
+        if self.args.lane in ('cdn', 'topology'):
+            self.eventually(lambda: self.trace(source, dest, False))
         finding = self.eventually(lambda: self.finding(source, dest))
         plan = self.api('plans', {'kind': 'Policy', 'findingID': finding['id'], 'source': source,
                                 'destination': dest, 'protocol': 'TCP', 'port': 8080})
@@ -146,6 +180,8 @@ class Harness:
         print(f'{namespace}: observed policy drop → inferred {kind} on {source["network"]}; dry-run left no object.', flush=True)
         with self.applied(plan):
             self.eventually(lambda: self.connection(source, dest, True))
+            if self.args.lane in ('cdn', 'topology'):
+                self.eventually(lambda: self.trace(source, dest, True))
             # An overbroad allowance would reach the closed listener and receive
             # RST. Timeout proves this other port still encounters policy denial.
             self.connection(source, dest, False, port=8081)
@@ -159,6 +195,8 @@ class Harness:
             print(f'{namespace}: API apply opened TCP/8080; other ports' +
                   (' and the primary network' if primary else '') + ' remain denied.', flush=True)
         self.eventually(lambda: self.connection(source, dest, False))
+        if self.args.lane in ('cdn', 'topology'):
+            self.eventually(lambda: self.trace(source, dest, False))
         assert self.baseline(namespace) == before, 'Rollback changed a pre-existing policy or left an allowance'
         print(f'{namespace}: API rollback restored denial and preserved the original policies.', flush=True)
         all_ports = self.api('plans', {'kind': 'Policy', 'source': source, 'destination': dest,

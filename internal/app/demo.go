@@ -26,7 +26,7 @@ func Demo() model.Snapshot {
 	}
 	for _, p := range []struct{ ns, name, ip, network string }{{"storefront", "web-7b49", "10.244.0.8", "default"}, {"payments", "api-6dc2", "10.244.0.12", "default"}, {"analytics", "worker-a82f", "10.40.0.8", "analytics/data"}, {"analytics", "warehouse-18ca", "10.40.0.12", "analytics/data"}} {
 		annotation := fmt.Sprintf(`{"%s":{"ip_addresses":["%s/24"],"mac_address":"0a:58:0a:28:00:08","role":"primary"}}`, p.network, p.ip)
-		inv.Pods = append(inv.Pods, core.Pod{ObjectMeta: meta.ObjectMeta{Namespace: p.ns, Name: p.name, UID: types.UID(p.name), Labels: map[string]string{"app": p.name}, Annotations: map[string]string{"k8s.ovn.org/pod-networks": annotation}}, Spec: core.PodSpec{NodeName: "kind-worker", Containers: []core.Container{{Name: "app", Image: "example"}}}, Status: core.PodStatus{PodIPs: []core.PodIP{{IP: p.ip}}}})
+		inv.Pods = append(inv.Pods, core.Pod{ObjectMeta: meta.ObjectMeta{Namespace: p.ns, Name: p.name, UID: types.UID(p.name), Labels: map[string]string{"app": p.name}, Annotations: map[string]string{"k8s.ovn.org/pod-networks": annotation}}, Spec: core.PodSpec{NodeName: "kind-worker", Containers: []core.Container{{Name: "app", Image: "example"}}}, Status: core.PodStatus{Phase: core.PodRunning, PodIPs: []core.PodIP{{IP: p.ip}}}})
 	}
 	for _, ns := range []string{"payments", "analytics"} {
 		inv.Policies = append(inv.Policies, netv1.NetworkPolicy{ObjectMeta: meta.ObjectMeta{Namespace: ns, Name: "default-deny-ingress", UID: types.UID(ns + "-deny")}, Spec: netv1.NetworkPolicySpec{PodSelector: meta.LabelSelector{}, PolicyTypes: []netv1.PolicyType{netv1.PolicyTypeIngress}}})
@@ -54,7 +54,7 @@ ufid:44444444-4444-4444-8444-444444444444, recirc_id(0x3b),in_port(7),eth_type(0
 	remote.Name = "catalog-9dd4"
 	remote.UID = "catalog-9dd4"
 	remote.Spec.NodeName = "kind-worker2"
-	remote.Annotations["k8s.ovn.org/pod-networks"] = `{"default":{"ip_addresses":["10.244.1.9/24"],"role":"primary"}}`
+	remote.Annotations["k8s.ovn.org/pod-networks"] = `{"default":{"ip_addresses":["10.244.1.9/24"],"mac_address":"0a:58:0a:f4:01:09","role":"primary"}}`
 	remote.Status.PodIPs = []core.PodIP{{IP: "10.244.1.9"}}
 	s.Inventory.Pods = append(s.Inventory.Pods, *remote)
 	s.Nodes[0].Flows += "\nufid:forward-a,recirc_id(0),in_port(4),ipv4(src=10.244.0.8,dst=10.244.1.9,proto=6),tcp(dst=8080),packets:1000,bytes:1250000,actions:9"

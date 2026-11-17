@@ -157,3 +157,24 @@ func TestRoutingAuthenticationAndBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestTraceAuthenticationAndValidation(t *testing.T) {
+	a, _ := app.New("demo", "", nil, nil, false)
+	a.Load(app.Demo())
+	h := Handler(a, "secret")
+	for _, path := range []string{"/api/trace", "/api/trace/tcp", "/api/trace/dns"} {
+		req := httptest.NewRequest("POST", path, strings.NewReader(`{"arbitraryCommand":"sh"}`))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 401 {
+			t.Fatalf("unauthenticated %s: %d", path, rec.Code)
+		}
+		req = httptest.NewRequest("POST", path, strings.NewReader(`{"arbitraryCommand":"sh"}`))
+		req.Header.Set("Authorization", "Bearer secret")
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 400 {
+			t.Fatalf("unknown input accepted %s: %d", path, rec.Code)
+		}
+	}
+}

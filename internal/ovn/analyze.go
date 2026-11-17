@@ -385,6 +385,53 @@ func causesFor(n model.NodeSnapshot, p datapath.Path) []model.PolicyCause {
 			}
 		}
 	}
+	return causesForHints(n, aclHints)
+}
+
+// TraceCauses resolves only unambiguous logical-flow UUIDs from ovn-trace.
+// A matching deny ACL explains a simulated decision, not an observed drop.
+func TraceCauses(n model.NodeSnapshot, inv model.Inventory, ids []string) []model.PolicyCause {
+	hints := map[string]bool{}
+	for _, id := range ids {
+		var matches []model.Row
+		if len(id) < 8 {
+			continue
+		}
+		for _, lf := range n.LogicalFlows {
+			if strings.HasPrefix(Str(lf["_uuid"]), id) {
+				matches = append(matches, lf)
+			}
+		}
+		if len(matches) == 1 {
+			hint := Str(Map(matches[0]["external_ids"])["stage-hint"])
+			if hint != "" {
+				hints[hint] = true
+			}
+		}
+	}
+	for hint := range hints {
+		matches := 0
+		for _, acl := range n.ACLs {
+			if strings.HasPrefix(Str(acl["_uuid"]), hint) {
+				matches++
+			}
+		}
+		if matches != 1 {
+			delete(hints, hint)
+		}
+	}
+	out := causesForHints(n, hints)
+	enrichAdminCauses(out, inv, n.CapturedAt)
+	for j := range out {
+		if out[j].Admin != nil {
+			out[j].Admin.Explanation = strings.ReplaceAll(out[j].Admin.Explanation, "observed path", "simulated path")
+			out[j].Admin.Warnings = []string{"This attribution describes the requested simulation and current API resource; it does not prove a real packet was dropped."}
+		}
+	}
+	return out
+}
+
+func causesForHints(n model.NodeSnapshot, aclHints map[string]bool) []model.PolicyCause {
 	var out []model.PolicyCause
 	for _, a := range n.ACLs {
 		id := Str(a["_uuid"])

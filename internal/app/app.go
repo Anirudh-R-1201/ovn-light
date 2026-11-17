@@ -33,6 +33,7 @@ type App struct {
 	mu            sync.RWMutex
 	analysis      sync.Mutex
 	operation     sync.Mutex
+	diagnostic    sync.Mutex
 	snapshot      model.Snapshot
 	view          model.View
 	plans         map[string]*policy.Plan

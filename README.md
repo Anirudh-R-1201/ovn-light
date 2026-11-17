@@ -10,6 +10,8 @@ The name is an oven light: a way to see what is happening inside OVN while it is
 
 ## Features
 
+- [Connection tracing](docs/connection-tracing.md): simulate pod or Service traffic, inspect policy decisions and logical stages, review an allowance, and run explicit TCP or DNS checks.
+
 - Live collection from existing OVS/OVN containers without a packet sampler or changes to hardware offload configuration.
 - Live topology filtered by network, with node/pod drill-down, independent source/receiver rates, bounded recent history, and selectable drop evidence.
 - Hardware Offload page with per-stage evidence, DOCA conntrack directions, partial-offload deltas and persistent fallback issues. See [offload diagnostics and limitations](docs/offload.md).

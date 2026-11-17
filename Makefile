@@ -14,6 +14,7 @@ check:
 	node --check internal/web/assets/topology.js
 	node --check internal/web/assets/offload.js
 	node --check internal/web/assets/routing.js
+	node --check internal/web/assets/trace.js
 demo:
 	$(GO) run ./cmd/ovn-light --demo
 image: build

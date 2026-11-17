@@ -212,3 +212,8 @@ The EgressIP reservation uses a running Docker container with its IPv4 address
 removed, keeping the address allocated by Docker without responding to ARP.
 Test cleanup removes its EgressIP and external containers; deleting the disposable
 cluster removes the remaining Kubernetes fixtures. Snapshot artifacts have routing credentials stripped.
+
+The CDN lane also checks pod and Service simulations before allowance, after apply,
+and after rollback. It verifies OVS trace evidence and real Service TCP/DNS tests.
+The browser suite covers the Trace page, policy review handoff, foreground results
+and mobile layout. Cross-zone pod continuation is exercised in the topology lane.
