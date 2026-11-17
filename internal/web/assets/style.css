@@ -14,3 +14,5 @@
 .offload-controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:24px 0}.offload-controls label{min-width:0}.offload-controls input,.offload-controls select{width:100%}.offload-path,.offload-issue{overflow-wrap:anywhere}#offload-nodes .network-card{min-width:0}#offload-nodes pre{max-height:280px;overflow:auto}#offload-detail .record,#offload-detail .step{overflow-wrap:anywhere}#offload-detail pre{white-space:pre-wrap;overflow-wrap:anywhere}#offload-issues{margin-bottom:32px}@media(max-width:700px){.offload-controls{grid-template-columns:1fr 1fr}.offload-path .record-top{align-items:flex-start;flex-direction:column}}
 
 .source-context .record{overflow-wrap:anywhere}.source-context .record-top{flex-wrap:wrap}#probe-port-field{max-width:180px;margin:0}#probe-port-field input{width:100%}
+
+.endpoint span{display:block;margin-top:4px;overflow-wrap:anywhere}

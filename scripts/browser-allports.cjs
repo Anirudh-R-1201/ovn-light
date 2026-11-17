@@ -11,6 +11,8 @@ module.exports=async function checkCandidatesAndAllPorts(browser,url,errors){
   await page.locator('.finding button').click();
   const details=await page.locator('#detail-body').textContent();
   if(!details.includes('10.244.0.0/24')||!details.includes('Node: '+source.node)||!details.includes('Unconfirmed'))throw new Error('Known source constraint/candidate uncertainty missing');
+  const lines=await page.locator('#detail .endpoint').first().locator('span').evaluateAll(spans=>spans.map(s=>s.getBoundingClientRect()));
+  if(lines.length<2||lines[1].top<lines[0].bottom)throw new Error('Source node ran into the address line');
   await page.getByRole('button',{name:'Choose the intended connection',exact:true}).click();
   if(await page.locator('#source').inputValue()!==''||await page.locator('#port').inputValue()!==''||await page.locator('#all-ports').isChecked())throw new Error('Unknown sender/port guessed automatically');
   await page.locator('#intent .close').click();
