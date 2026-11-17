@@ -10,15 +10,20 @@ import (
 )
 
 type Flow struct {
-	ID        string
-	Match     map[string]string
-	Recirc    string
-	InPort    string
-	Actions   string
-	Packets   uint64
-	Bytes     uint64
-	Offloaded bool
-	Raw       string
+	ID             string
+	Match          map[string]string
+	Recirc         string
+	InPort         string
+	Actions        string
+	Packets        uint64
+	Bytes          uint64
+	Offloaded      bool
+	OffloadStatus  string
+	Provider       string
+	OffloadInfo    string
+	PartialPackets uint64
+	PartialBytes   uint64
+	Raw            string
 }
 
 // Split separates OVS lists while preserving nested actions and quoted names.
@@ -88,7 +93,17 @@ func ParseFlow(line string) (Flow, error) {
 	if !ok {
 		return Flow{}, fmt.Errorf("flow has no actions: %.100s", line)
 	}
-	f := Flow{Match: map[string]string{}, Actions: strings.TrimSpace(actions), Raw: line, Recirc: "0"}
+	f := Flow{Match: map[string]string{}, Actions: strings.TrimSpace(actions), Raw: line, Recirc: "0", OffloadStatus: "unknown"}
+	// DOCA appends diagnostic fields after actions. They are evidence, not
+	// actions, and must not turn a terminal drop into an unrecognized path.
+	for _, key := range []string{", dp-extra-info:", ", dp-offload-info:"} {
+		if i := strings.Index(f.Actions, key); i >= 0 {
+			f.Actions = f.Actions[:i]
+		}
+	}
+	if _, info, ok := strings.Cut(actions, "dp-offload-info:"); ok {
+		f.OffloadInfo = strings.Trim(strings.TrimSpace(info), "'\"")
+	}
 	for _, item := range Split(before) {
 		switch {
 		case strings.HasPrefix(item, "ufid:"):
@@ -106,14 +121,35 @@ func ParseFlow(line string) (Flow, error) {
 				return f, fmt.Errorf("invalid byte counter: %w", err)
 			}
 		case strings.HasPrefix(item, "offloaded:"):
-			f.Offloaded = strings.TrimSpace(strings.TrimPrefix(item, "offloaded:")) == "yes"
+			switch strings.TrimSpace(strings.TrimPrefix(item, "offloaded:")) {
+			case "yes":
+				f.Offloaded, f.OffloadStatus = true, "hardware"
+			case "partial":
+				f.OffloadStatus = "partial"
+			case "no":
+				f.OffloadStatus = "software"
+			}
 		case strings.HasPrefix(item, "dp:"):
-			// A userspace DPDK datapath does not imply hardware offload.
+			f.Provider = strings.TrimSpace(strings.TrimPrefix(item, "dp:"))
+		case strings.HasPrefix(item, "partial_offload_packets:"), strings.HasPrefix(item, "partial_offload_bytes:"):
+			key, value, _ := strings.Cut(item, ":")
+			n, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64)
+			if err != nil {
+				return f, fmt.Errorf("invalid partial offload counter: %w", err)
+			}
+			if key == "partial_offload_packets" {
+				f.PartialPackets = n
+			} else {
+				f.PartialBytes = n
+			}
 		default:
 			if strings.Contains(item, "(") {
 				flatten("", item, f.Match)
 			}
 		}
+	}
+	if f.OffloadStatus == "unknown" && f.Provider == "ovs" {
+		f.OffloadStatus = "software"
 	}
 	if v, ok := f.Match["recirc_id"]; ok {
 		f.Recirc = NormalizeNumber(v)

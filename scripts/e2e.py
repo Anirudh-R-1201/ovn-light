@@ -62,6 +62,14 @@ class Harness:
                     raise AssertionError(f'Timed out waiting for convergence: {error}') from error
                 time.sleep(2)
 
+    def offload_disabled(self):
+        report = self.api('offload')
+        assert report['nodes'], 'Offload collector has not inspected any nodes'
+        assert all(n['state'] == 'disabled' for n in report['nodes']), report['nodes']
+        assert not report['paths'] and report['issues'] == 0, 'Software-only KIND generated offload issues'
+        assert self.api('offload?node=missing')['nodes'] == [], 'Offload node filter leaked'
+        print('Offload API: software-only KIND nodes correctly reported disabled')
+
     def endpoints(self, namespace, role):
         state = self.api('refresh', {})
         assert state['mode'] == 'live' and state['writesEnabled'], 'Requires a live writable test deployment'
@@ -288,6 +296,7 @@ def main(default_lane='cdn'):
             harness.policy('ovn-light-secondary', 'secondary')
         else:
             harness.firewall()
+        harness.eventually(harness.offload_disabled)
     finally:
         harness.artifacts()
 

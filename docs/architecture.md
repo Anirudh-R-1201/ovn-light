@@ -79,7 +79,7 @@ Primary-network and EgressFirewall verification run an explicit TCP connection f
 
 Collection never installs flow rules, enables packet sampling, clears counters or changes offload. The running OVS instance supplies its datapath view, including offload metadata exposed by its provider. DPDK by itself is not classified as hardware offload.
 
-This cannot guarantee visibility of every hardware drop. Device ACLs outside OVS, packets dropped before flow installation, driver aggregation, delayed counters and expired cache entries are outside coverage. Translation-cache availability and provider output vary. KIND validates only the software path; hardware fixtures and device validation remain separate work.
+This cannot guarantee visibility of every hardware drop. Device ACLs outside OVS, packets dropped before flow installation, driver aggregation, delayed counters and expired cache entries are outside coverage. Translation-cache availability and provider output vary. KIND validates only the software path. Synthetic offload fixtures test interpretation; device validation remains separate work. See [hardware offload diagnostics](offload.md) for collection, correlation and alert semantics.
 
 Traffic history is bounded and in memory. This release has no durable traffic time series, L7 parser, FQDN policy engine, automatic application dependency learning, multi-cluster relay, per-user Kubernetes impersonation or operator lifecycle management.
 
@@ -134,7 +134,7 @@ changed flow matches/actions invalidate the individual translation. The cache
 budget uses serialized input size: at most 16 MiB per node and 32 MiB total.
 Decoded Go objects consume additional memory. Cold collection reads four OVN
 tables per node; warm collection needs only flow, port and interface dumps plus
-uncached translations. Pod-facing forwarded outputs need no translation lookup;
+uncached translations. Offload configuration and supported provider/CT diagnostics add a separately cached, bounded read once per minute. Pod-facing forwarded outputs need no translation lookup;
 remote outputs use only their terminal translation. Drop paths have priority
 within the lookup budget. Collectors reports time, command count, input bytes,
 metadata reuse and translation cache hits.

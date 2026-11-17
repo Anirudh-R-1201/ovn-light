@@ -48,6 +48,7 @@ func run() error {
 	maxDetraces := fs.Int("max-detraces", 64, "Maximum UFID translation lookups per node per collection")
 	concurrency := fs.Int("collection-concurrency", 3, "Maximum concurrent node collections (1–16)")
 	metadataTTL := fs.Duration("metadata-cache-ttl", time.Minute, "Maximum age of cached OVN tables and translations (5s–5m)")
+	offloadGrace := fs.Duration("offload-grace", time.Minute, "Minimum sustained software activity before an offload issue (30s–10m)")
 	writes := fs.Bool("enable-writes", false, "Enable reviewed Kubernetes changes using server credentials")
 	dataDir := fs.String("data-dir", "", "Persistent directory for change audit records (required for writes)")
 	output := fs.String("output", "ovn-light-snapshot.json", "Output file for capture command")
@@ -76,6 +77,9 @@ func run() error {
 	}
 	if *metadataTTL < 5*time.Second || *metadataTTL > 5*time.Minute {
 		return fmt.Errorf("metadata-cache-ttl must be 5s–5m")
+	}
+	if *offloadGrace < 30*time.Second || *offloadGrace > 10*time.Minute {
+		return fmt.Errorf("offload-grace must be 30s–10m")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -147,6 +151,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	a.OffloadGrace = *offloadGrace
 	if collector == nil {
 		if mode == "demo" {
 			a.Load(app.DemoBaseline(snapshot))

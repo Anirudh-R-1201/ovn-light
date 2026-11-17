@@ -179,3 +179,14 @@ go test ./internal/topology -run '^$' -bench BenchmarkTopology -benchmem
 
 This measures aggregation of 2,000 synthetic traffic groups over 20 frames, not
 large-cluster capture throughput or hardware-offload accuracy.
+
+## Offload diagnostics
+
+`make test` exercises DOCA partial counters, provider failures, CT/NAT/zone
+correlation, setup suppression, consecutive activity, reset/recovery, bounded
+retention and authenticated queries. `scripts/browser-smoke.cjs` includes
+`scripts/browser-offload.cjs` for desktop/mobile filters, stage/CT evidence and
+issue navigation. The synthetic demo supplies these cases without hardware.
+Each KIND lane also checks `/api/offload`: nodes must report disabled and no
+offload issues. Hardware behavior still requires a NIC/DPU test environment;
+see [offload diagnostics](offload.md).

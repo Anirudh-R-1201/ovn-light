@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/trozet/ovn-light/internal/model"
@@ -59,6 +60,12 @@ ufid:44444444-4444-4444-8444-444444444444, recirc_id(0x3b),in_port(7),eth_type(0
 	s.Nodes[0].Flows += "\nufid:forward-a,recirc_id(0),in_port(4),ipv4(src=10.244.0.8,dst=10.244.1.9,proto=6),tcp(dst=8080),packets:1000,bytes:1250000,actions:9"
 	s.Nodes[0].Collection.FlowComplete = true
 	s.Nodes = append(s.Nodes, model.NodeSnapshot{Name: "kind-worker2", CapturedAt: now, Datapath: "system@ovs-system", Collection: model.CollectionStats{FlowComplete: true}, Ports: "system@ovs-system:\n  port 8: catalog0\n  port 9: geneve0\n", Interfaces: []model.Row{{"name": "catalog0", "external_ids": map[string]any{"iface-id": "payments_catalog-9dd4", "iface-id-ver": "catalog-9dd4"}}}, Flows: "ufid:forward-b,recirc_id(0),in_port(9),ipv4(src=10.244.0.8,dst=10.244.1.9,proto=6),tcp(dst=8080),packets:980,bytes:1225000,actions:8"})
+
+	s.Nodes[0].Offload = model.OffloadEvidence{CapturedAt: now, ConfigKnown: true, Enabled: true, Provider: "doca", Version: "synthetic", Config: map[string]string{"hw-offload": "true", "doca-init": "true"}, CTSupported: true, CTComplete: true, Conntrack: "tcp,orig=(src=10.244.0.8,dst=10.244.0.12,sport=41912,dport=8080),reply=(src=10.244.0.12,dst=10.244.0.8,sport=8080,dport=41912),zone=64000,protoinfo=(state=ESTABLISHED),orig_offloaded:yes,reply_offloaded:yes", Stats: "Synthetic provider counters: 12 inserted offloads, 1 CT connection"}
+	s.Nodes[1].Offload = model.OffloadEvidence{CapturedAt: now, ConfigKnown: true, Enabled: false, Version: "synthetic"}
+	s.Nodes[0].Flows = strings.ReplaceAll(s.Nodes[0].Flows, "actions:", "offloaded:yes,dp:doca,actions:")
+	s.Nodes[0].Flows = strings.Replace(s.Nodes[0].Flows, "packets:41, bytes:2460, offloaded:yes,dp:doca,actions:drop", "packets:41, bytes:2460, offloaded:no,dp:ovs,actions:drop, dp-offload-info:'Synthetic example: action is unsupported'", 1)
+	s.Nodes[0].Flows = strings.Replace(s.Nodes[0].Flows, "packets:1000,bytes:1250000,", "packets:1000,bytes:1250000,partial_offload_packets:120,partial_offload_bytes:150000,", 1)
 	return s
 }
 
@@ -70,6 +77,7 @@ func DemoBaseline(s model.Snapshot) model.Snapshot {
 	counts := regexp.MustCompile(`(packets:|bytes:)([0-9]+)`)
 	for i := range s.Nodes {
 		s.Nodes[i].CapturedAt = s.CapturedAt
+		s.Nodes[i].Offload.CapturedAt = s.CapturedAt
 		s.Nodes[i].Flows = counts.ReplaceAllStringFunc(s.Nodes[i].Flows, func(v string) string {
 			p := counts.FindStringSubmatch(v)
 			n, _ := strconv.ParseUint(p[2], 10, 64)

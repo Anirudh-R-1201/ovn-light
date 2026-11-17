@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/trozet/ovn-light/internal/app"
+	"github.com/trozet/ovn-light/internal/offload"
 	"github.com/trozet/ovn-light/internal/policy"
 	"github.com/trozet/ovn-light/internal/topology"
 )
@@ -26,6 +27,31 @@ func Handler(a *app.App, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, a.State(), nil) })
+	mux.HandleFunc("GET /api/offload", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		for _, field := range []string{"node", "network", "status", "search", "id"} {
+			if len(q.Get(field)) > 256 {
+				respond(w, nil, fmt.Errorf("%s filter is too long", field))
+				return
+			}
+		}
+		limit := 50
+		if q.Has("limit") {
+			var err error
+			limit, err = strconv.Atoi(q.Get("limit"))
+			if err != nil || limit < 1 || limit > 100 {
+				respond(w, nil, fmt.Errorf("limit must be 1–100"))
+				return
+			}
+		}
+		switch q.Get("status") {
+		case "", "issues", "hardware", "partial", "software", "failure", "unknown", "pending", "not-expected":
+		default:
+			respond(w, nil, fmt.Errorf("invalid offload status"))
+			return
+		}
+		respond(w, a.Offload(offload.Options{Node: q.Get("node"), Network: q.Get("network"), Status: q.Get("status"), Search: q.Get("search"), ID: q.Get("id"), Limit: limit}), nil)
+	})
 	mux.HandleFunc("GET /api/context", func(w http.ResponseWriter, r *http.Request) {
 		v := a.State()
 		respond(w, map[string]any{"mode": v.Mode, "writesEnabled": v.WritesEnabled, "collectedAt": v.CollectedAt, "collecting": v.Collecting, "networks": v.Networks, "nodes": v.Nodes}, nil)

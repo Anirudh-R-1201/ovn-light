@@ -156,3 +156,17 @@ ufid:b,recirc_id(8),in_port(1),packets:6,actions:2`)
 		t.Fatal(p)
 	}
 }
+
+func TestDOCAOffloadEvidence(t *testing.T) {
+	f, err := ParseFlow("ufid:a,recirc_id(0),in_port(1),packets:30,bytes:3000,partial_offload_packets:7,partial_offload_bytes:700,offloaded:partial,dp:ovs,actions:drop, dp-extra-info:miniflow_bits(1,2), dp-offload-info:'unsupported action, details'")
+	if err != nil || f.Offloaded || f.OffloadStatus != "partial" || f.Provider != "ovs" || f.PartialPackets != 7 || f.PartialBytes != 700 || f.Actions != "drop" || f.OffloadInfo != "unsupported action, details" {
+		t.Fatal(f, err)
+	}
+	f, err = ParseFlow("in_port(1),packets:1,bytes:64,dp:dpdk,actions:2")
+	if err != nil || f.OffloadStatus != "unknown" {
+		t.Fatal("DPDK alone is not hardware evidence", f, err)
+	}
+	if _, err = ParseFlow("in_port(1),partial_offload_packets:bad,actions:2"); err == nil {
+		t.Fatal("invalid partial counter accepted")
+	}
+}

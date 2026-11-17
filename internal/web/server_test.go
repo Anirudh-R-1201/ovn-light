@@ -80,3 +80,56 @@ func TestRejectUntrustedManifestAndDemoWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestOffloadAPIAuthenticationFiltersAndDetails(t *testing.T) {
+	a, _ := app.New("demo", "", nil, nil, false)
+	s := app.Demo()
+	a.Load(app.DemoBaseline(s))
+	a.Load(s)
+	h := Handler(a, "secret")
+	for _, path := range []string{"/api/offload", "/api/offload?limit=101", "/api/offload?status=bad", "/api/offload?node=missing"} {
+		req := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != 401 {
+			t.Fatal("offload bypassed authentication")
+		}
+		req.Header.Set("Authorization", "Bearer secret")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if strings.Contains(path, "101") || strings.Contains(path, "bad") {
+			if w.Code != 400 {
+				t.Fatal(path, w.Code)
+			}
+			continue
+		}
+		if w.Code != 200 {
+			t.Fatal(w.Body.String())
+		}
+		var r struct {
+			Paths []struct {
+				ID     string `json:"id"`
+				Stages []any  `json:"stages"`
+			}
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &r); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(path, "missing") {
+			if len(r.Paths) != 0 {
+				t.Fatal("node filter leaked")
+			}
+			continue
+		}
+		if len(r.Paths) == 0 || len(r.Paths[0].Stages) != 0 {
+			t.Fatal("summary should omit raw stages", r)
+		}
+		req = httptest.NewRequest("GET", "/api/offload?id="+r.Paths[0].ID, nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if err := json.Unmarshal(w.Body.Bytes(), &r); err != nil || len(r.Paths) != 1 || len(r.Paths[0].Stages) == 0 {
+			t.Fatal("detail lost stage evidence", w.Body.String())
+		}
+	}
+}

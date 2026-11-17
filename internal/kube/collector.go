@@ -25,6 +25,7 @@ type Collector struct {
 	captureMu             sync.Mutex
 	cacheMu               sync.Mutex
 	cache                 map[string]nodeCache
+	offloadCache          map[string]offloadCache
 	exec                  func(context.Context, Target, []string) (string, error)
 }
 type nodeTargets struct{ ovs, ovn Target }
@@ -183,16 +184,15 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 	ctx, cancelNode := context.WithTimeout(ctx, 90*time.Second)
 	defer cancelNode()
 	n = model.NodeSnapshot{Name: name, CapturedAt: time.Now().UTC(), Detraces: map[string]string{}}
-	run := func(target Target, args ...string) string {
+	execute := func(target Target, args ...string) (string, error) {
 		if ctx.Err() != nil {
-			return ""
+			return "", ctx.Err()
 		}
 		if target.Pod == "" {
-			return ""
+			return "", fmt.Errorf("no command target")
 		}
 		if n.Collection.Bytes >= 24<<20 {
-			n.Errors = append(n.Errors, "Node collection byte budget reached.")
-			return ""
+			return "", fmt.Errorf("node collection byte budget reached")
 		}
 		call, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
@@ -205,15 +205,16 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 			out, err = c.Client.execBounded(call, target, args, nil, min(8<<20, (24<<20)-n.Collection.Bytes))
 		}
 		n.Collection.Bytes += len(out)
+		return out, err
+	}
+	run := func(target Target, args ...string) string {
+		out, err := execute(target, args...)
 		if err != nil {
-			message := err.Error()
-			if len(message) > 2048 {
-				message = message[:2048] + "…"
-			}
-			n.Errors = append(n.Errors, message)
+			n.Errors = append(n.Errors, shortError(err))
 		}
 		return out
 	}
+
 	if t.ovs.Pod == "" {
 		t.ovs = t.ovn
 	}
@@ -225,7 +226,7 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 	n.Collection.FlowComplete = len(n.Errors) == 0 && n.Flows != ""
 	n.Ports = run(t.ovs, "ovs-appctl", "-t", "ovs-vswitchd", "dpctl/show")
 	for _, line := range strings.Split(n.Ports, "\n") {
-		if strings.HasPrefix(line, "system@") || strings.HasPrefix(line, "netdev@") {
+		if strings.HasPrefix(line, "system@") || strings.HasPrefix(line, "netdev@") || strings.HasPrefix(line, "doca@") {
 			n.Datapath = strings.TrimSpace(line)
 			break
 		}
@@ -241,7 +242,8 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 		}
 		return rows
 	}
-	n.Interfaces = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=name,ofport,external_ids", "list", "Interface")
+	n.Interfaces = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=name,ofport,external_ids,type,options,status,error", "list", "Interface")
+	n.Offload = c.captureOffload(ctx, name, t.ovs, execute)
 	key += fmt.Sprintf("/%v/%v", t.ovs, t.ovn)
 	cached := c.cached(name, key)
 	if !cached.At.IsZero() {

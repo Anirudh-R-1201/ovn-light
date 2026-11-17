@@ -21,6 +21,7 @@ type Inventory struct {
 }
 
 type NodeSnapshot struct {
+	Offload        OffloadEvidence   `json:"offload"`
 	Name           string            `json:"name"`
 	CapturedAt     time.Time         `json:"capturedAt"`
 	Datapath       string            `json:"datapath"`
@@ -124,17 +125,20 @@ type Network struct {
 }
 
 type View struct {
-	Mode          string                      `json:"mode"`
-	CollectedAt   time.Time                   `json:"collectedAt"`
-	Collecting    bool                        `json:"collecting"`
-	WritesEnabled bool                        `json:"writesEnabled"`
-	Findings      []Finding                   `json:"findings"`
-	Networks      []Network                   `json:"networks"`
-	Nodes         []NodeStatus                `json:"nodes"`
-	Pods          []Endpoint                  `json:"pods"`
-	Connections   []unstructured.Unstructured `json:"connections"`
-	Errors        []string                    `json:"errors"`
-	Traffic       []TrafficObservation        `json:"-"`
+	Offload           OffloadReport               `json:"-"`
+	OffloadIssues     []OffloadIssue              `json:"offloadIssues"`
+	OffloadIssueCount int                         `json:"offloadIssueCount"`
+	Mode              string                      `json:"mode"`
+	CollectedAt       time.Time                   `json:"collectedAt"`
+	Collecting        bool                        `json:"collecting"`
+	WritesEnabled     bool                        `json:"writesEnabled"`
+	Findings          []Finding                   `json:"findings"`
+	Networks          []Network                   `json:"networks"`
+	Nodes             []NodeStatus                `json:"nodes"`
+	Pods              []Endpoint                  `json:"pods"`
+	Connections       []unstructured.Unstructured `json:"connections"`
+	Errors            []string                    `json:"errors"`
+	Traffic           []TrafficObservation        `json:"-"`
 }
 
 type NodeStatus struct {

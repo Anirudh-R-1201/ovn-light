@@ -11,6 +11,7 @@ import (
 
 	"github.com/trozet/ovn-light/internal/datapath"
 	"github.com/trozet/ovn-light/internal/model"
+	"github.com/trozet/ovn-light/internal/offload"
 )
 
 var portRE = regexp.MustCompile(`(?m)^\s*port\s+(\d+):\s+([^\s(]+)`)
@@ -153,7 +154,34 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 			}
 			v.Findings = append(v.Findings, f)
 		}
-		v.Traffic = append(v.Traffic, traffic.traffic(n, allPaths, old, oldNodes[n.Name], v.Findings)...)
+
+		observations := traffic.traffic(n, allPaths, old, oldNodes[n.Name], v.Findings)
+		v.Traffic = append(v.Traffic, observations...)
+		offNode, offPaths := offload.Analyze(n, flows, allPaths)
+		byCounter := map[string][]model.TrafficObservation{}
+		for _, o := range observations {
+			byCounter[o.CounterID] = append(byCounter[o.CounterID], o)
+		}
+		for i := range offPaths {
+			p := &offPaths[i]
+			if i < len(allPaths) {
+				path := allPaths[i]
+				p.Source = resolveSource(n, path, attachments)
+				p.Destination = traffic.endpoint(p.Source.Network, path.Identity, "dst")
+				p.Network = p.Source.Network
+				p.Protocol, p.Destination.Port = transport(path.Identity)
+				// Use receiver-side attribution only when this terminal counter has one
+				// observed identity. Shared counters must not select an arbitrary pod.
+				matches := byCounter[n.Name+"/"+path.Flows[len(path.Flows)-1].ID]
+				if len(matches) == 1 {
+					p.Source, p.Destination, p.Network, p.Protocol = matches[0].Source, matches[0].Destination, matches[0].Network, matches[0].Protocol
+				}
+			}
+			p.Signature += "/" + p.Network + "/" + p.Source.UID + "/" + p.Destination.UID
+		}
+		v.Offload.Nodes = append(v.Offload.Nodes, offNode)
+		v.Offload.Paths = append(v.Offload.Paths, offPaths...)
+
 	}
 	sort.Slice(v.Findings, func(i, j int) bool {
 		a, b := v.Findings[i], v.Findings[j]
@@ -165,6 +193,7 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 		}
 		return a.ID < b.ID
 	})
+	v.Offload.CollectedAt = s.CapturedAt
 	return v
 }
 

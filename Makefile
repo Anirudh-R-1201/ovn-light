@@ -11,6 +11,7 @@ check:
 	$(GO) vet ./...
 	node --check internal/web/assets/app.js
 	node --check internal/web/assets/topology.js
+	node --check internal/web/assets/offload.js
 demo:
 	$(GO) run ./cmd/ovn-light --demo
 image: build

@@ -3,7 +3,9 @@ package app
 
 import (
 	"context"
+	"github.com/trozet/ovn-light/internal/offload"
 	"testing"
+	"time"
 
 	"github.com/trozet/ovn-light/internal/policy"
 )
@@ -70,4 +72,24 @@ func TestDropProposalRetainsObservedNetwork(t *testing.T) {
 		return
 	}
 	t.Fatal("missing demo finding")
+}
+
+func TestOffloadStaleLiveEvidence(t *testing.T) {
+	a, _ := New("live", "", nil, nil, false)
+	s := Demo()
+	s.CapturedAt = time.Now().Add(-5 * time.Minute)
+	for i := range s.Nodes {
+		s.Nodes[i].CapturedAt = s.CapturedAt
+		s.Nodes[i].Offload.CapturedAt = s.CapturedAt
+	}
+	a.Load(s)
+	r := a.Offload(offload.Options{})
+	if len(r.Nodes) == 0 || r.Nodes[0].State != "unknown" || r.Issues != 0 {
+		t.Fatal(r)
+	}
+	for _, p := range r.Paths {
+		if p.Status != "unknown" || p.Issue {
+			t.Fatal(p)
+		}
+	}
 }

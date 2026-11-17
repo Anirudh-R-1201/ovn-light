@@ -17,6 +17,7 @@ import (
 
 	"github.com/trozet/ovn-light/internal/kube"
 	"github.com/trozet/ovn-light/internal/model"
+	"github.com/trozet/ovn-light/internal/offload"
 	"github.com/trozet/ovn-light/internal/ovn"
 	"github.com/trozet/ovn-light/internal/policy"
 	"github.com/trozet/ovn-light/internal/topology"
@@ -25,6 +26,8 @@ import (
 )
 
 type App struct {
+	OffloadGrace  time.Duration
+	offload       offload.Store
 	mu            sync.RWMutex
 	analysis      sync.Mutex
 	operation     sync.Mutex
@@ -89,6 +92,13 @@ func (a *App) Load(s model.Snapshot) {
 	v := ovn.Analyze(s, previous)
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.offload.Grace = a.OffloadGrace
+	v.OffloadIssues = a.offload.Update(v.Offload)
+	v.OffloadIssueCount = len(v.OffloadIssues)
+	if len(v.OffloadIssues) > 100 {
+		v.OffloadIssues = v.OffloadIssues[:100]
+	}
+	v.Offload = model.OffloadReport{}
 	a.snapshot = s
 	a.topology.Update(v)
 	v.Traffic = nil
@@ -118,6 +128,12 @@ func (a *App) Topology(o topology.Options) topology.Graph {
 	a.topologyCache[key] = g
 	return g
 }
+func (a *App) Offload(o offload.Options) model.OffloadReport {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	o.Stale = a.Mode == "live" && time.Since(a.snapshot.CapturedAt) > 2*time.Minute
+	return a.offload.Report(o)
+}
 func (a *App) State() model.View {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -125,6 +141,10 @@ func (a *App) State() model.View {
 	v.Mode = a.Mode
 	v.WritesEnabled = a.Writes
 	v.Collecting = a.collecting
+	if a.Mode == "live" && time.Since(v.CollectedAt) > 2*time.Minute {
+		v.OffloadIssues = nil
+		v.OffloadIssueCount = 0
+	}
 	return v
 }
 func (a *App) Snapshot() model.Snapshot { a.mu.RLock(); defer a.mu.RUnlock(); return a.snapshot }
