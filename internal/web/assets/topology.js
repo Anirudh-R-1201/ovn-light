@@ -83,7 +83,7 @@ function renderTopologyPartialPaths(root,groups){
  }
 }
 function markTopologySelection(){
- for(const el of $('topology-graph').querySelectorAll('[data-topology-edge]'))el.setAttribute('aria-pressed',String(el.dataset.topologyEdge===topologyState.edge));
+ for(const el of $('topology-graph').querySelectorAll('button[data-topology-edge]'))el.setAttribute('aria-pressed',String(el.dataset.topologyEdge===topologyState.edge));
 }
 function renderTopologyGraph(){
  const host=$('topology-graph');host.replaceChildren();host.style.height='auto';if(!topologyState.graph)return;
@@ -94,7 +94,7 @@ function renderTopologyGraph(){
  if(!g.nodes.length){root.style.height='auto';root.append(text('div','No matching observed traffic. Generate traffic and allow two collection rounds to measure rates.','empty'));return;}
  const width=host.clientWidth;
  if(width<620){root.style.height='auto';const map=new Map(g.nodes.map(n=>[n.id,n]));
-  for(const e of g.edges){const a=map.get(e.source),b=map.get(e.destination),card=text('article','','topology-mobile-link');card.append(button(`${a.name} → ${b.name}`,()=>inspectTopologyEdge(e.id)),text('p',trafficStatus[e.status],'traffic-'+e.status),text('small',`Observed: ${(e.status==='drop'?count(e.droppedPackets)+' drops':trafficRate(e.sourceBytesPerSecond??e.localBytesPerSecond??e.receiverBytesPerSecond))} · ${e.connections} traffic groups`));if($('topology-level').value==='nodes')card.append(button('Explore pods →',()=>topologyFocus(a)));root.append(card)}
+  for(const e of g.edges){const a=map.get(e.source),b=map.get(e.destination),card=text('article','','topology-mobile-link');card.append(button(`${a.name} → ${b.name}`,()=>inspectTopologyEdge(e.id)),text('p',trafficStatus[e.status],'traffic-'+e.status),text('small',`Observed: ${(e.status==='drop'?count(e.droppedPackets)+' drops':trafficRate(e.sourceBytesPerSecond??e.localBytesPerSecond??e.receiverBytesPerSecond))} · ${e.connections} traffic groups`));if(a.node&&a.node===b.node)card.append(text('small','Same node: '+a.node));if($('topology-level').value==='nodes')card.append(button('Explore pods →',()=>topologyFocus(a)));root.append(card)}
   if(!g.edges.length)for(const n of g.nodes)root.append(button(n.name,()=>topologyFocus(n)));
   return;
  }
@@ -109,26 +109,46 @@ function renderTopologyGraph(){
  }else ordered.forEach((n,i)=>coords.set(n.id,{x:i%2?width-110:110,y:80+Math.floor(i/2)*160}));
  root.style.height=height+'px';
  const svg=topologySVG('svg',{width,height,role:'img','aria-label':'Directed observed traffic links. Use the labeled link buttons to inspect evidence.'});svg.classList.add('topology-wires');root.append(svg);
- const centerCount=new Map();
- for(const e of g.edges){const a=coords.get(e.source),b=coords.get(e.destination),color=trafficColor(e.status);let d,mx,my;
-  if(e.source===e.destination){d=`M ${a.x+83} ${a.y-25} C ${a.x+145} ${a.y-110},${a.x+145} ${a.y+110},${a.x+83} ${a.y+25}`;mx=a.x+135;my=a.y;}
-  else{const sign=b.x>=a.x?1:-1,x1=a.x+sign*84,x2=b.x-sign*84,m=(x1+x2)/2;d=`M ${x1} ${a.y} C ${m} ${a.y},${m} ${b.y},${x2} ${b.y}`;mx=m;my=(a.y+b.y)/2;
-   if(a.x===b.x){const bend=a.x<width/2?width*.42:width*.58;d=`M ${a.x+sign*84} ${a.y} C ${bend} ${a.y},${bend} ${b.y},${b.x+sign*84} ${b.y}`;mx=bend;}
-   else if(g.edges.some(other=>other.source===e.destination&&other.destination===e.source)){const dx=x2-x1,dy=b.y-a.y,length=Math.hypot(dx,dy)||1,ox=dy/length*55,oy=-dx/length*55;d=`M ${x1} ${a.y} C ${x1+dx/3+ox} ${a.y+dy/3+oy},${x1+dx*2/3+ox} ${a.y+dy*2/3+oy},${x2} ${b.y}`;mx+=ox*.75;my+=oy*.75;}
+ const links=[],obstacles=[];
+ for(const e of g.edges){const a=coords.get(e.source),b=coords.get(e.destination),color=trafficColor(e.status);let d;
+  const inward=a.x<width/2?1:-1,reciprocal=g.edges.some(other=>other.source===e.destination&&other.destination===e.source);
+  if(e.source===e.destination){d=`M ${a.x+inward*85} ${a.y-25} C ${a.x+inward*220} ${a.y-110},${a.x+inward*220} ${a.y+110},${a.x+inward*85} ${a.y+25}`;}
+  else if(a.x===b.x){
+   const bend=a.x+inward*(Math.min(300,width*.30)+(reciprocal&&e.source<e.destination?65:0)),port=a.x+inward*85;
+   d=`M ${port} ${a.y} C ${bend} ${a.y},${bend} ${b.y},${port} ${b.y}`;
+  }else{
+   const sign=b.x>a.x?1:-1,x1=a.x+sign*85,x2=b.x-sign*85,m=(x1+x2)/2;
+   d=`M ${x1} ${a.y} C ${m} ${a.y},${m} ${b.y},${x2} ${b.y}`;
+   if(reciprocal){const dx=x2-x1,dy=b.y-a.y,length=Math.hypot(dx,dy)||1,ox=dy/length*55,oy=-dx/length*55;d=`M ${x1} ${a.y} C ${x1+dx/3+ox} ${a.y+dy/3+oy},${x1+dx*2/3+ox} ${a.y+dy*2/3+oy},${x2} ${b.y}`;}
   }
-  const line=topologySVG('path',{d,fill:'none',stroke:color,'stroke-width':Math.max(2,Math.min(7,2+Math.log10(1+(e.sourceBytesPerSecond||e.localBytesPerSecond||0)/1000)))});if(!['both','local','drop'].includes(e.status))line.setAttribute('stroke-dasharray','6 6');svg.append(line);
+  const line=topologySVG('path',{d,fill:'none',stroke:color,'stroke-width':Math.max(2,Math.min(7,2+Math.log10(1+(e.sourceBytesPerSecond||e.localBytesPerSecond||0)/1000)))});line.classList.add('topology-link');line.dataset.topologyEdge=e.id;if(!['both','local','drop'].includes(e.status))line.setAttribute('stroke-dasharray','6 6');svg.append(line);
   const hit=topologySVG('path',{d,fill:'none',stroke:'transparent','stroke-width':22});hit.classList.add('topology-hit');hit.onclick=()=>inspectTopologyEdge(e.id);svg.append(hit);
   const length=line.getTotalLength(),end=line.getPointAtLength(Math.max(0,length-5)),previous=line.getPointAtLength(Math.max(0,length-17)),angle=Math.atan2(end.y-previous.y,end.x-previous.x);
   const arrow=topologySVG('polygon',{points:`${end.x},${end.y} ${end.x-10*Math.cos(angle-.5)},${end.y-10*Math.sin(angle-.5)} ${end.x-10*Math.cos(angle+.5)},${end.y-10*Math.sin(angle+.5)}`,fill:color});svg.append(arrow);
   if(e.status==='drop'){
    const sourceNode=g.nodes.find(n=>n.id===e.source).node,destinationNode=g.nodes.find(n=>n.id===e.destination).node;
    const fraction=e.dropNodes?.includes(destinationNode) ? 0.86 : e.dropNodes?.includes(sourceNode) ? 0.14 : 0.5,p=line.getPointAtLength(length*fraction);
-   const marker=topologySVG('g',{'aria-label':'Observed drop'});marker.classList.add('topology-hit');marker.onclick=()=>inspectTopologyEdge(e.id);marker.append(topologySVG('circle',{cx:p.x,cy:p.y,r:12,fill:'var(--bg)',stroke:color}));const cross=topologySVG('text',{x:p.x,y:p.y+5,'text-anchor':'middle',fill:color,'font-size':18});cross.textContent='×';marker.append(cross);svg.append(marker);
+   const marker=topologySVG('g',{'aria-label':'Observed drop'});marker.classList.add('topology-hit');marker.onclick=()=>inspectTopologyEdge(e.id);marker.append(topologySVG('circle',{cx:p.x,cy:p.y,r:12,fill:'var(--bg)',stroke:color}));const cross=topologySVG('text',{x:p.x,y:p.y+5,'text-anchor':'middle',fill:color,'font-size':18});cross.textContent='×';marker.append(cross);svg.append(marker);obstacles.push({left:p.x-15,right:p.x+15,top:p.y-15,bottom:p.y+15});
   }
-  const slot=Math.round(my);const offset=centerCount.get(slot)||0;centerCount.set(slot,offset+1);my+=offset*32-22;
-  const label=button(`${e.status==='drop'?'× ':['gap','source-only'].includes(e.status)?'? ':''}${(e.status==='drop'?count(e.droppedPackets)+' drops':trafficRate(e.sourceBytesPerSecond??e.localBytesPerSecond??e.receiverBytesPerSecond))} · ${e.connections}`,()=>inspectTopologyEdge(e.id),'secondary topology-edge');label.style.left=Math.max(110,Math.min(width-110,mx))+'px';label.style.top=my+'px';label.title=`${trafficStatus[e.status]} · ${networkName(e.network)}`;label.setAttribute('aria-label',`${g.nodes.find(n=>n.id===e.source).name} to ${g.nodes.find(n=>n.id===e.destination).name}: ${trafficStatus[e.status]}`);label.dataset.topologyEdge=e.id;label.setAttribute('aria-pressed',String(topologyState.edge===e.id));root.append(label);
+  const label=button(`${e.status==='drop'?'× ':['gap','source-only'].includes(e.status)?'? ':''}${(e.status==='drop'?count(e.droppedPackets)+' drops':trafficRate(e.sourceBytesPerSecond??e.localBytesPerSecond??e.receiverBytesPerSecond))} · ${e.connections}`,()=>inspectTopologyEdge(e.id),'secondary topology-edge');label.title=`${trafficStatus[e.status]} · ${networkName(e.network)}`;label.setAttribute('aria-label',`${g.nodes.find(n=>n.id===e.source).name} to ${g.nodes.find(n=>n.id===e.destination).name}: ${trafficStatus[e.status]}`);label.dataset.topologyEdge=e.id;label.setAttribute('aria-pressed',String(topologyState.edge===e.id));const sourceNode=g.nodes.find(n=>n.id===e.source).node;if(sourceNode&&sourceNode===g.nodes.find(n=>n.id===e.destination).node)label.title+=' · Same node: '+sourceNode;root.append(label);links.push({line,label});
  }
- for(const n of ordered){const c=coords.get(n.id),b=button('',()=>n.endpoint?showTopologyPod(n):topologyFocus(n),'secondary topology-node');b.replaceChildren(text('strong',n.name),text('small',n.endpoint?`${n.endpoint.ip||'Address unresolved'}`:`${n.pods} pods · ${networkName(n.network)}`),text('small',n.endpoint?networkName(n.endpoint.network):n.node?'Explore pods →':'Inspect attached links','accent'));b.style.left=c.x+'px';b.style.top=c.y+'px';root.append(b);}
+ for(const n of ordered){const c=coords.get(n.id),b=button('',()=>n.endpoint?showTopologyPod(n):topologyFocus(n),'secondary topology-node');b.replaceChildren(text('strong',n.name),text('small',n.endpoint?`${n.endpoint.ip||'Address unresolved'}`:`${n.pods} pods · ${networkName(n.network)}`),text('small',n.endpoint?networkName(n.endpoint.network):n.node?'Explore pods →':'Inspect attached links','accent'));b.style.left=c.x+'px';b.style.top=c.y+'px';root.append(b);obstacles.push({left:c.x-b.offsetWidth/2,right:c.x+b.offsetWidth/2,top:c.y-b.offsetHeight/2,bottom:c.y+b.offsetHeight/2});}
+ placeTopologyLabels(links,obstacles,width,height);
+}
+// Position labels on the rendered curve. When labels compete for space, move
+// along their own paths so they remain attached after a resize or filter change.
+function placeTopologyLabels(links,obstacles,width,height){
+ const overlap=(a,b)=>Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));
+ for(const {line,label}of links){
+  const length=line.getTotalLength(),w=label.offsetWidth+8,h=label.offsetHeight+8;let best;
+  for(const fraction of [.5,.42,.58,.34,.66,.26,.74,.18,.82]){
+   const p=line.getPointAtLength(length*fraction),box={left:p.x-w/2,right:p.x+w/2,top:p.y-h/2,bottom:p.y+h/2};
+   const outside=Math.max(0,-box.left)+Math.max(0,box.right-width)+Math.max(0,-box.top)+Math.max(0,box.bottom-height);
+   const score=outside*10000+obstacles.reduce((sum,o)=>sum+overlap(box,o),0);
+   if(!best||score<best.score)best={p,box,score};if(score===0)break;
+  }
+  label.style.left=best.p.x+'px';label.style.top=best.p.y+'px';obstacles.push(best.box);
+ }
 }
 function showTopologyPod(n){topologyState.edge=null;markTopologySelection();const root=$('topology-detail');root.replaceChildren(text('h2',n.name),text('p',`${n.node||'External'} · ${networkName(n.endpoint.network)} · ${n.endpoint.role||'Role unresolved'}`,'muted'),text('p','Select an attached traffic link to inspect its observations.','note'));}
 async function inspectTopologyEdge(id){
@@ -149,6 +169,7 @@ function renderTopologyConnection(c){
  const local=c.source.node&&c.source.node===c.destination.node;
  const title=text('div','','record-top');title.append(text('h3',`${topologyEndpoint(c.source,'Source')} → ${topologyEndpoint(c.destination,'Destination')}`),badge(trafficStatus[c.status],c.status==='drop'?'red':['both','local'].includes(c.status)?'green':'amber'));root.append(title);
  root.append(text('p',`${c.source.node||'Unresolved source node'} → ${c.destination.node||'External / unresolved node'} · Last observed ${new Date(c.lastSeen).toLocaleTimeString()}`,'note'));
+ if(local)root.append(text('p',`Both endpoints are on ${c.source.node}. Traffic between pods on the same node can still be blocked by network policy.`,'note'));
  if(!c.source.uid||!c.destination.uid){
   const known=c.source.uid?'The source pod is identified. The destination pod is not identified by this observation.':c.destination.uid?'The destination pod is identified. The source pod is not identified by this observation.':'The pod identities are not established by this observation.';
   root.append(text('p',known+' Other observations on the same node path may describe different traffic.','callout'));
