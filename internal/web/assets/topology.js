@@ -50,6 +50,7 @@ function renderTopologyGraph(){
   if(e.source===e.destination){d=`M ${a.x+83} ${a.y-25} C ${a.x+145} ${a.y-110},${a.x+145} ${a.y+110},${a.x+83} ${a.y+25}`;mx=a.x+135;my=a.y;}
   else{const sign=b.x>=a.x?1:-1,x1=a.x+sign*84,x2=b.x-sign*84,m=(x1+x2)/2;d=`M ${x1} ${a.y} C ${m} ${a.y},${m} ${b.y},${x2} ${b.y}`;mx=m;my=(a.y+b.y)/2;
    if(a.x===b.x){const bend=a.x<width/2?width*.42:width*.58;d=`M ${a.x+sign*84} ${a.y} C ${bend} ${a.y},${bend} ${b.y},${b.x+sign*84} ${b.y}`;mx=bend;}
+   else if(g.edges.some(other=>other.source===e.destination&&other.destination===e.source)){const dx=x2-x1,dy=b.y-a.y,length=Math.hypot(dx,dy)||1,ox=dy/length*55,oy=-dx/length*55;d=`M ${x1} ${a.y} C ${x1+dx/3+ox} ${a.y+dy/3+oy},${x1+dx*2/3+ox} ${a.y+dy*2/3+oy},${x2} ${b.y}`;mx+=ox*.75;my+=oy*.75;}
   }
   const line=topologySVG('path',{d,fill:'none',stroke:color,'stroke-width':Math.max(2,Math.min(7,2+Math.log10(1+(e.sourceBytesPerSecond||e.localBytesPerSecond||0)/1000)))});if(!['both','local','drop'].includes(e.status))line.setAttribute('stroke-dasharray','6 6');svg.append(line);
   const hit=topologySVG('path',{d,fill:'none',stroke:'transparent','stroke-width':22});hit.classList.add('topology-hit');hit.onclick=()=>inspectTopologyEdge(e.id);svg.append(hit);
@@ -63,7 +64,7 @@ function renderTopologyGraph(){
   const slot=Math.round(my);const offset=centerCount.get(slot)||0;centerCount.set(slot,offset+1);my+=offset*32-22;
   const label=button(`${e.status==='drop'?'× ':['gap','source-only'].includes(e.status)?'? ':''}${(e.status==='drop'?count(e.droppedPackets)+' drops':trafficRate(e.sourceBytesPerSecond??e.localBytesPerSecond??e.receiverBytesPerSecond))} · ${e.connections}`,()=>inspectTopologyEdge(e.id),'secondary topology-edge');label.style.left=Math.max(110,Math.min(width-110,mx))+'px';label.style.top=my+'px';label.title=`${trafficStatus[e.status]} · ${networkName(e.network)}`;label.setAttribute('aria-label',`${g.nodes.find(n=>n.id===e.source).name} to ${g.nodes.find(n=>n.id===e.destination).name}: ${trafficStatus[e.status]}`);label.setAttribute('aria-pressed',String(topologyState.edge===e.id));root.append(label);
  }
- for(const n of ordered){const c=coords.get(n.id),b=button('',()=>n.endpoint?showTopologyPod(n):topologyFocus(n),'secondary topology-node');b.replaceChildren(text('strong',n.name),text('small',n.endpoint?`${n.endpoint.ip||'Address unresolved'}`:`${n.pods} pods · ${networkName(n.network)}`),text('small',n.endpoint?networkName(n.endpoint.network):'Explore pods →','accent'));b.style.left=c.x+'px';b.style.top=c.y+'px';root.append(b);}
+ for(const n of ordered){const c=coords.get(n.id),b=button('',()=>n.endpoint?showTopologyPod(n):topologyFocus(n),'secondary topology-node');b.replaceChildren(text('strong',n.name),text('small',n.endpoint?`${n.endpoint.ip||'Address unresolved'}`:`${n.pods} pods · ${networkName(n.network)}`),text('small',n.endpoint?networkName(n.endpoint.network):n.node?'Explore pods →':'Inspect attached links','accent'));b.style.left=c.x+'px';b.style.top=c.y+'px';root.append(b);}
 }
 function showTopologyPod(n){const root=$('topology-detail');root.replaceChildren(text('h2',n.name),text('p',`${n.node||'External'} · ${networkName(n.endpoint.network)} · ${n.endpoint.role||'Role unresolved'}`,'muted'),text('p','Select an attached traffic link to inspect its observations.','note'));}
 async function inspectTopologyEdge(id){
