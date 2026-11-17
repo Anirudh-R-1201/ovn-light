@@ -93,3 +93,18 @@ func TestOffloadStaleLiveEvidence(t *testing.T) {
 		}
 	}
 }
+
+func TestIncompleteOffloadPathRetainsWorkloadNetwork(t *testing.T) {
+	s := Demo()
+	s.Nodes[0].Flows = "ufid:incomplete,recirc_id(0),in_port(4),ipv4(src=10.244.0.8,dst=10.244.0.12,proto=6),tcp(src=41912,dst=8080),packets:30,bytes:3000,offloaded:partial,dp:ovs,actions:recirc(999)"
+	a, _ := New("snapshot", "", nil, nil, false)
+	a.Load(s)
+	r := a.Offload(offload.Options{Network: "default"})
+	if len(r.Paths) != 1 || r.Paths[0].Source.Pod != "web-7b49" || r.Paths[0].Complete {
+		t.Fatal(r)
+	}
+	detail := a.Offload(offload.Options{ID: r.Paths[0].ID})
+	if len(detail.Nodes) != 1 || detail.Nodes[0].Name != "kind-worker" {
+		t.Fatal("unrelated node evidence returned", detail.Nodes)
+	}
+}

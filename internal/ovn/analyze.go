@@ -162,10 +162,21 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 		for _, o := range observations {
 			byCounter[o.CounterID] = append(byCounter[o.CounterID], o)
 		}
+		flowByID := map[string]datapath.Flow{}
+		for _, f := range flows {
+			flowByID[f.ID] = f
+		}
 		for i := range offPaths {
 			p := &offPaths[i]
+			var path datapath.Path
 			if i < len(allPaths) {
-				path := allPaths[i]
+				path = allPaths[i]
+			} else if len(p.Stages) > 0 {
+				if f, ok := flowByID[p.Stages[0].ID]; ok {
+					path = datapath.Path{Flows: []datapath.Flow{f}, Identity: f.Match, Original: f.Match}
+				}
+			}
+			if len(path.Flows) > 0 {
 				p.Source = resolveSource(n, path, attachments)
 				p.Destination = traffic.endpoint(p.Source.Network, path.Identity, "dst")
 				p.Network = p.Source.Network

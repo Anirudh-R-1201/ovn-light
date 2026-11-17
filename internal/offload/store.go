@@ -153,7 +153,19 @@ func (s *Store) Report(o Options) model.OffloadReport {
 	r.Paths = []model.OffloadPath{}
 	r.Nodes = []model.OffloadNode{}
 	r.Total, r.Issues = 0, 0
+	detailNode := ""
+	if o.ID != "" {
+		for _, p := range s.report.Paths {
+			if p.ID == o.ID {
+				detailNode = p.Node
+				break
+			}
+		}
+	}
 	for _, n := range s.report.Nodes {
+		if o.ID != "" && n.Name != detailNode {
+			continue
+		}
 		if o.Stale {
 			n.State = "unknown"
 			n.Errors = append(append([]string{}, n.Errors...), "Collection is stale; current offload health is unknown.")
