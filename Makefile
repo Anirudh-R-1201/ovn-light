@@ -9,6 +9,7 @@ test:
 	$(GO) test -race ./...
 check:
 	$(GO) vet ./...
+	node --check internal/web/assets/issues.js
 	node --check internal/web/assets/app.js
 	node --check internal/web/assets/topology.js
 	node --check internal/web/assets/offload.js
