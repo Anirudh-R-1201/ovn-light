@@ -162,7 +162,10 @@ source/receiver totals, duplicate counters, shared-counter suppression, resets,
 retention/cardinality limits, overlapping networks and collector gaps.
 
 The browser smoke suite checks node links, pod drill-down, UDN filtering,
-connection details, and mobile layout. The `topology` KIND lane generates real
+connection details, and mobile layout. Partial-path checks cover complementary
+observations, multiple possible source pods, opposite directions, network
+isolation, missing rate history, and keeping unresolved sources unselected in
+policy review. The `topology` KIND lane generates real
 cross-node traffic using `examples/topology.yaml`, applies an allowance through
 the API, observes counters at both nodes, and restores denial through rollback.
 A wildcarded receiver drop can require an explicit source choice in the proposal.

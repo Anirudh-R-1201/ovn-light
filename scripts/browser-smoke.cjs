@@ -110,6 +110,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   if(firewallIntent.kind!=='EgressFirewall'||firewallIntent.findingID!=='firewall-drop'||firewallIntent.destination.ip!==destination.ip)throw new Error('Incorrect firewall proposal request');
   if(!await egressPage.locator('#review-body').textContent().then(s=>s.includes('All current and future pods')&&s.includes('before existing rule 2')&&s.includes('Current EgressFirewall before this change')))throw new Error('Firewall review omitted namespace scope or ordered change');
   if(!await egressPage.locator('.review-check').textContent().then(s=>s.includes('all pods in the source namespace')))throw new Error('Firewall review hid namespace-wide permission');
+  await require('./browser-topology.cjs')(browser,url,errors);
   if(errors.length)throw new Error(errors.join('\n'));
   console.log('Browser smoke passed: topology drill-down and filtering, network scope, demo/mobile layout, foreground probes, ordered EgressFirewall review.');
  } finally {await browser.close()}

@@ -94,7 +94,10 @@ view ranks directed links by the highest observed rate at either end; filter to 
 receipts, choose a recent window, and limit the number of links on screen.
 Pods are grouped by their Kubernetes node. Selecting a link shows protocol/port
 groups, separate source and receiver counters, rate history, and observation
-coverage. Drop details lead into the existing policy review workflow.
+coverage. When pod identity is incomplete, observations are grouped by network
+and node direction with a **Pod match unconfirmed** label. Each observation keeps
+its own counters and evidence; grouping never selects a pod for a policy proposal.
+Drop details lead into the existing policy review workflow.
 
 Two comparable captures are needed for rates. The first capture only establishes
 a baseline. Green means corresponding activity was observed at both ends; red
