@@ -55,8 +55,9 @@ spec:
         command: [/bin/sh, -c]
         args:
         - |
+          # Resolve the cluster name directly, without host DNS search domains.
           while true; do
-            target="$(getent ahostsv4 server.ovn-light-demo.svc.cluster.local | awk 'NR==1 {print $1}')"
+            target="$(getent ahostsv4 server.ovn-light-demo.svc.cluster.local. | awk 'NR==1 {print $1}')"
             [ -n "$target" ] && break
             sleep 2
           done
