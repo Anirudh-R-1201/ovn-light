@@ -143,6 +143,12 @@ func networkAliases(inv model.Inventory) (map[string]string, map[string]string) 
 		if Str(c["type"]) != "ovn-k8s-cni-overlay" {
 			continue
 		}
+		// OVN treats a CNI config without a topology as the default network.
+		// Its NAD can support route advertisements without adding a network.
+		if Str(c["topology"]) == "" {
+			aliases[id] = "default"
+			continue
+		}
 		names[id] = Str(c["name"])
 		if names[id] != "" {
 			aliases[id] = "network:" + names[id]
