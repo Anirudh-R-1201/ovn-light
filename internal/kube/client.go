@@ -125,6 +125,10 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 func (c *Client) Exec(ctx context.Context, t Target, args []string, stdin io.Reader) (string, error) {
+	return c.execBounded(ctx, t, args, stdin, 32<<20)
+}
+
+func (c *Client) execBounded(ctx context.Context, t Target, args []string, stdin io.Reader, limit int) (string, error) {
 	req := c.Core.CoreV1().RESTClient().Post().Resource("pods").Name(t.Pod).Namespace(t.Namespace).SubResource("exec").VersionedParams(&core.PodExecOptions{Container: t.Container, Command: args, Stdin: stdin != nil, Stdout: true, Stderr: true}, scheme.ParameterCodec)
 	config := rest.CopyConfig(c.Config)
 	config.Timeout = 0
@@ -132,7 +136,7 @@ func (c *Client) Exec(ctx context.Context, t Target, args []string, stdin io.Rea
 	if err != nil {
 		return "", err
 	}
-	out := &limitedBuffer{remaining: 32 << 20}
+	out := &limitedBuffer{remaining: limit}
 	stderr := &limitedBuffer{remaining: 1 << 20}
 	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{Stdin: stdin, Stdout: out, Stderr: stderr})
 	if err != nil {

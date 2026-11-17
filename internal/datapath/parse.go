@@ -94,9 +94,17 @@ func ParseFlow(line string) (Flow, error) {
 		case strings.HasPrefix(item, "ufid:"):
 			f.ID = strings.TrimPrefix(item, "ufid:")
 		case strings.HasPrefix(item, "packets:"):
-			f.Packets, _ = strconv.ParseUint(strings.TrimPrefix(item, "packets:"), 10, 64)
+			var err error
+			f.Packets, err = strconv.ParseUint(strings.TrimSpace(strings.TrimPrefix(item, "packets:")), 10, 64)
+			if err != nil {
+				return f, fmt.Errorf("invalid packet counter: %w", err)
+			}
 		case strings.HasPrefix(item, "bytes:"):
-			f.Bytes, _ = strconv.ParseUint(strings.TrimPrefix(item, "bytes:"), 10, 64)
+			var err error
+			f.Bytes, err = strconv.ParseUint(strings.TrimSpace(strings.TrimPrefix(item, "bytes:")), 10, 64)
+			if err != nil {
+				return f, fmt.Errorf("invalid byte counter: %w", err)
+			}
 		case strings.HasPrefix(item, "offloaded:"):
 			f.Offloaded = strings.TrimSpace(strings.TrimPrefix(item, "offloaded:")) == "yes"
 		case strings.HasPrefix(item, "dp:"):
@@ -177,6 +185,36 @@ func Recircs(actions string) []string {
 		}
 	}
 	return ids
+}
+
+// Only unconditional numeric outputs are modeled. Clone and conditional
+// branches retain their uncertainty rather than becoming ordinary delivery.
+func Outputs(actions string) []string {
+	return outputs(actions, nil)
+}
+func outputs(actions string, names map[string]bool) []string {
+	var out []string
+	for _, a := range Split(actions) {
+		port := a
+		if strings.HasPrefix(a, "output(") && strings.HasSuffix(a, ")") {
+			port = a[7 : len(a)-1]
+		}
+		if _, err := strconv.ParseUint(port, 10, 32); err == nil || names[port] {
+			out = append(out, port)
+		}
+	}
+	return out
+}
+
+func PortNames(show string) []string {
+	var names []string
+	for _, line := range strings.Split(show, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[0] == "port" {
+			names = append(names, fields[2])
+		}
+	}
+	return names
 }
 
 // A conntrack commit without forwarding is also a drop. Only known side effects

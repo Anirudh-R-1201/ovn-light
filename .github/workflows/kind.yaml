@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [cdn, udn, secondary, egress]
+        lane: [cdn, udn, secondary, egress, topology]
     env:
       KIND_CLUSTER: ovn-light-ci
       KUBECONFIG: ${{ github.workspace }}/.artifacts/kubeconfig

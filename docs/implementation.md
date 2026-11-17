@@ -31,8 +31,10 @@ Implementation checkpoints:
 - [x] Ordered EgressFirewall IP/port exceptions, atomic patching, verification and guarded rule rollback
 - [x] UDN inventory and reviewed ClusterNetworkConnect creation
 - [x] Web UI, snapshot/demo modes, manifests and documented KIND workflow
+- [x] Network-filtered live node/pod topology, bounded traffic history and independent observation counters
+- [x] Collection budgets, metadata/translation caches and collector cost metrics
 - [x] Tests, live validation and recorded limitations
 
-Hardware validation, secondary-interface verification, cross-node path stitching,
+Hardware validation, secondary-interface verification, distributed collection,
 ordered administrative-policy evaluation and an OpenShift operator remain
 future work. See architecture.md for the boundaries of this first release.

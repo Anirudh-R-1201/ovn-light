@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "capturedAt": "2026-11-17T16:59:24.658881549Z",
+  "inventory": {
+    "pods": [
+      {
+        "metadata": {
+          "name": "client",
+          "namespace": "ovn-light-topology",
+          "uid": "a75ccb54-2620-4466-9ae2-484365519cf6",
+          "labels": {
+            "app": "client"
+          },
+          "annotations": {
+            "k8s.ovn.org/pod-networks": "{\"default\":{\"ip_addresses\":[\"10.244.0.3/24\"],\"mac_address\":\"0a:58:0a:f4:00:03\",\"gateway_ips\":[\"10.244.0.1\"],\"routes\":[{\"dest\":\"10.244.0.0/16\",\"nextHop\":\"10.244.0.1\"},{\"dest\":\"10.96.0.0/16\",\"nextHop\":\"10.244.0.1\"},{\"dest\":\"169.254.0.5/32\",\"nextHop\":\"10.244.0.1\"},{\"dest\":\"100.64.0.0/16\",\"nextHop\":\"10.244.0.1\"}],\"ip_address\":\"10.244.0.3/24\",\"gateway_ip\":\"10.244.0.1\",\"role\":\"primary\"}}"
+          }
+        },
+        "spec": {
+          "nodeName": "ovn-light-topology-ci-control-plane"
+        },
+        "status": {
+          "hostIP": "172.18.0.12",
+          "podIPs": [
+            {
+              "ip": "10.244.0.3"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "server",
+          "namespace": "ovn-light-topology",
+          "uid": "2c8893dc-1050-43d7-b50c-495958ea6408",
+          "labels": {
+            "app": "server"
+          },
+          "annotations": {
+            "k8s.ovn.org/pod-networks": "{\"default\":{\"ip_addresses\":[\"10.244.1.8/24\"],\"mac_address\":\"0a:58:0a:f4:01:08\",\"gateway_ips\":[\"10.244.1.1\"],\"routes\":[{\"dest\":\"10.244.0.0/16\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"10.96.0.0/16\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"169.254.0.5/32\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"100.64.0.0/16\",\"nextHop\":\"10.244.1.1\"}],\"ip_address\":\"10.244.1.8/24\",\"gateway_ip\":\"10.244.1.1\",\"role\":\"primary\"}}"
+          }
+        },
+        "spec": {
+          "nodeName": "ovn-light-topology-ci-worker"
+        },
+        "status": {
+          "hostIP": "172.18.0.13",
+          "podIPs": [
+            {
+              "ip": "10.244.1.8"
+            }
+          ]
+        }
+      }
+    ],
+    "resources": {}
+  },
+  "nodes": [
+    {
+      "name": "ovn-light-topology-ci-control-plane",
+      "capturedAt": "2026-11-17T16:59:24.670329171Z",
+      "datapath": "system@ovs-system:",
+      "flows": "ufid:40392769-edf7-45a7-bd7a-fdf57ccc5748, recirc_id(0x20),dp_hash(0/0),skb_priority(0/0),tunnel(tun_id=0xff0003,src=172.18.0.13,dst=172.18.0.12,ttl=0/0,geneve({class=0/0,type=0/0,len=0/0}{class=0/0,type=0/0,len=0/0}),flags(+key)),in_port(genev_sys_6081),skb_mark(0/0),ct_state(0x2a/0x3f),ct_zone(0/0),ct_mark(0/0x1),ct_label(0/0),eth(src=00:00:00:00:00:00/00:00:00:00:00:00,dst=0a:58:0a:f4:00:03),eth_type(0x0800),ipv4(src=0.0.0.0/0.0.0.0,dst=10.244.0.3,proto=0/0,tos=0/0,ttl=0/0,frag=no), packets:244, bytes:23397, used:0.067s, flags:SFP., dp:ovs, actions:01a03bd8e98fd25\nufid:d3721597-2a4e-495f-b6fc-b2c0be531f43, recirc_id(0),dp_hash(0/0),skb_priority(0/0),tunnel(tun_id=0xff0003,src=172.18.0.13,dst=172.18.0.12,ttl=0/0,geneve({class=0x102,type=0x80,len=4,0x30002/0x7fffffff}),flags(+key)),in_port(genev_sys_6081),skb_mark(0),ct_state(0/0x3f),ct_zone(0/0),ct_mark(0/0x4f),ct_label(0/0),eth(src=0a:58:64:58:00:03,dst=0a:58:64:58:00:02),eth_type(0x0800),ipv4(src=10.244.1.0/255.255.255.0,dst=10.244.0.3,proto=6,tos=0/0,ttl=63,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:244, bytes:23397, used:0.067s, flags:SFP., dp:ovs, actions:set(eth(src=0a:58:0a:f4:00:01,dst=0a:58:0a:f4:00:03)),set(ipv4(ttl=62)),check_pkt_len(size=1414,gt(sample(sample=100.0%,actions(meter(3),userspace(pid=4294967295,controller(reason=1,dont_send=0,continuation=0,recirc_id=31,rule_cookie=0x1577c48d,controller_id=0,max_len=65535))))),le(ct(zone=20,nat),recirc(0x20)))\nufid:1523f9ff-1af4-4819-bdb7-3ef5ce719207, recirc_id(0),dp_hash(0/0),skb_priority(0/0),in_port(01a03bd8e98fd25),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),eth(src=0a:58:0a:f4:00:03,dst=0a:58:0a:f4:00:01),eth_type(0x0800),ipv4(src=10.244.0.3,dst=10.128.0.0/255.128.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:3224, bytes:261298, used:0.072s, flags:SFP., dp:ovs, actions:ct(zone=20,nat),recirc(0x1b)\nufid:041c2c3e-0011-42d8-9131-7ce08be4c52e, recirc_id(0x1b),dp_hash(0/0),skb_priority(0/0),in_port(01a03bd8e98fd25),skb_mark(0),ct_state(0x21/0x3f),ct_zone(0/0),ct_mark(0/0x4f),ct_label(0/0),ct_tuple4(src=0.0.0.0/0.0.0.0,dst=0.0.0.0/0.0.0.0,proto=6,tp_src=0/0,tp_dst=8080),eth(src=0a:58:0a:f4:00:03,dst=0a:58:0a:f4:00:01),eth_type(0x0800),ipv4(src=10.244.0.3,dst=10.244.1.0/255.255.255.0,proto=6,tos=0/0x3,ttl=64,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:741, bytes:54834, used:0.080s, flags:S, dp:ovs, actions:ct(commit,zone=20,mark=0/0x41,label=0/0xffff00000000000000000000,nat(src)),check_pkt_len(size=1414,gt(sample(sample=100.0%,actions(meter(3),userspace(pid=4294967295,controller(reason=1,dont_send=0,continuation=0,recirc_id=24,rule_cookie=0xbbd685e0,controller_id=0,max_len=65535))))),le(set(tunnel(tun_id=0xff0003,src=172.18.0.12,dst=172.18.0.13,ttl=64,tp_dst=6081,geneve({class=0x102,type=0x80,len=4,0x20003}),flags(df|csum|key))),set(eth(src=0a:58:64:58:00:02,dst=0a:58:64:58:00:03)),set(ipv4(ttl=63)),genev_sys_6081))\nufid:56b9282b-9c2b-4633-a24f-562152c95805, recirc_id(0x1b),dp_hash(0/0),skb_priority(0/0),in_port(01a03bd8e98fd25),skb_mark(0),ct_state(0x22/0x3f),ct_zone(0/0),ct_mark(0/0x4f),ct_label(0/0),eth(src=0a:58:0a:f4:00:03,dst=0a:58:0a:f4:00:01),eth_type(0x0800),ipv4(src=10.244.0.3,dst=10.244.1.0/255.255.255.0,proto=6,tos=0/0x3,ttl=64,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:243, bytes:20166, used:0.072s, flags:FP., dp:ovs, actions:ct_clear,check_pkt_len(size=1414,gt(sample(sample=100.0%,actions(meter(3),userspace(pid=4294967295,controller(reason=1,dont_send=0,continuation=0,recirc_id=24,rule_cookie=0xbbd685e0,controller_id=0,max_len=65535))))),le(set(tunnel(tun_id=0xff0003,src=172.18.0.12,dst=172.18.0.13,ttl=64,tp_dst=6081,geneve({class=0x102,type=0x80,len=4,0x20003}),flags(df|csum|key))),set(eth(src=0a:58:64:58:00:02,dst=0a:58:64:58:00:03)),set(ipv4(ttl=63)),genev_sys_6081))",
+      "ports": "system@ovs-system:\n  lookups: hit:244222 missed:179 lost:0\n  flows: 12\n  masks: hit:467762 total:12 hit/pkt:1.91\n  cache: hit:175759 hit-rate:71.91%\n  caches:\n    masks-cache: size:256\n  port 0: ovs-system (internal)\n  port 1: br-int (internal)\n  port 2: eth0\n  port 3: breth0 (internal)\n  port 4: genev_sys_6081 (geneve: packet_type=ptap)\n  port 5: ovn-k8s-mp0 (internal)\n  port 6: 01a03bd8e98fd25\n",
+      "interfaces": [
+        {
+          "external_ids": {
+            "attached_mac": "0a:58:0a:f4:00:03",
+            "iface-id": "ovn-light-topology_client",
+            "iface-id-ver": "a75ccb54-2620-4466-9ae2-484365519cf6",
+            "ip_addresses": "10.244.0.3/24",
+            "ovn-installed": "true",
+            "ovn-installed-ts": "1794934442513",
+            "pod-if-name": "eth0",
+            "sandbox": "01a03bd8e98fd25aa10da579a5a429f7c399972c1d294e9c6747d3dca77833c3"
+          },
+          "name": "01a03bd8e98fd25",
+          "ofport": 4
+        }
+      ],
+      "detraces": {},
+      "flowCapturedAt": "2026-11-17T16:59:24.692880646Z",
+      "metadataAt": "2026-11-17T16:59:17.558917925Z",
+      "collection": {
+        "durationMs": 67,
+        "commands": 3,
+        "bytes": 8254,
+        "metadataCached": true,
+        "detraceHits": 8,
+        "flowComplete": true
+      }
+    },
+    {
+      "name": "ovn-light-topology-ci-worker",
+      "capturedAt": "2026-11-17T16:59:24.670279832Z",
+      "datapath": "system@ovs-system:",
+      "flows": "ufid:86565f25-541e-4b0f-b63c-018c3fba2b8e, recirc_id(0x20e),dp_hash(0/0),skb_priority(0/0),in_port(ece8a9a270c5ebb),skb_mark(0),ct_state(0x2a/0x3f),ct_zone(0/0),ct_mark(0/0x4f),ct_label(0/0),eth(src=0a:58:0a:f4:01:08,dst=0a:58:0a:f4:01:01),eth_type(0x0800),ipv4(src=10.244.1.8/255.255.255.248,dst=10.244.0.0/255.255.255.0,proto=6,tos=0/0x3,ttl=64,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:244, bytes:23397, used:0.069s, flags:SFP., dp:ovs, actions:ct_clear,check_pkt_len(size=1414,gt(sample(sample=100.0%,actions(meter(3),userspace(pid=4294967295,controller(reason=1,dont_send=0,continuation=0,recirc_id=527,rule_cookie=0x48ee98d,controller_id=0,max_len=65535))))),le(set(tunnel(tun_id=0xff0003,src=172.18.0.13,dst=172.18.0.12,ttl=64,tp_dst=6081,geneve({class=0x102,type=0x80,len=4,0x30002}),flags(df|csum|key))),set(eth(src=0a:58:64:58:00:03,dst=0a:58:64:58:00:02)),set(ipv4(ttl=63)),genev_sys_6081))\nufid:7335dc4c-9c3e-47a1-bc96-338c09840cc7, recirc_id(0),dp_hash(0/0),skb_priority(0/0),in_port(ece8a9a270c5ebb),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),eth(src=0a:58:0a:f4:01:08,dst=0a:58:0a:f4:01:01),eth_type(0x0800),ipv4(src=10.244.1.8,dst=10.128.0.0/255.128.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:244, bytes:23397, used:0.069s, flags:SFP., dp:ovs, actions:ct(zone=24,nat),recirc(0x20e)\nufid:3a30b046-a37a-46eb-8d66-f6edb07c3e0a, recirc_id(0x102),dp_hash(0/0),skb_priority(0/0),tunnel(tun_id=0xff0003,src=172.18.0.12,dst=172.18.0.13,ttl=0/0,geneve({class=0/0,type=0/0,len=0/0}{class=0/0,type=0/0,len=0/0}),flags(+key)),in_port(genev_sys_6081),skb_mark(0/0),ct_state(0x22/0x3f),ct_zone(0/0),ct_mark(0/0x41),ct_label(0/0),eth(src=0a:58:0a:f4:01:01,dst=0a:58:0a:f4:01:08),eth_type(0x0800),ipv4(src=10.244.0.3,dst=10.244.1.8,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=8080),tcp_flags(0/0), packets:244, bytes:20318, used:0.068s, flags:FP., dp:ovs, actions:ece8a9a270c5ebb\nufid:c0fe7daf-6887-4363-addb-e6015ba6de4b, recirc_id(0),dp_hash(0/0),skb_priority(0/0),tunnel(tun_id=0xff0003,src=172.18.0.12,dst=172.18.0.13,ttl=0/0,geneve({class=0x102,type=0x80,len=4,0x20003/0x7fffffff}),flags(+key)),in_port(genev_sys_6081),skb_mark(0),ct_state(0/0x3f),ct_zone(0/0),ct_mark(0/0x4f),ct_label(0/0),eth(src=0a:58:64:58:00:02,dst=0a:58:64:58:00:03),eth_type(0x0800),ipv4(src=10.244.0.0/255.255.255.0,dst=10.244.1.8,proto=6,tos=0/0,ttl=63,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:3224, bytes:261298, used:0.068s, flags:SFP., dp:ovs, actions:set(eth(src=0a:58:0a:f4:01:01,dst=0a:58:0a:f4:01:08)),set(ipv4(ttl=62)),check_pkt_len(size=1414,gt(sample(sample=100.0%,actions(meter(3),userspace(pid=4294967295,controller(reason=1,dont_send=0,continuation=0,recirc_id=257,rule_cookie=0xb6f9672a,controller_id=0,max_len=65535))))),le(ct(zone=24,nat),recirc(0x102)))\nufid:f99aec26-5890-4c52-b180-3c1790c0f120, recirc_id(0x102),dp_hash(0/0),skb_priority(0/0),tunnel(tun_id=0xff0003,src=172.18.0.12,dst=172.18.0.13,ttl=0/0,geneve({class=0/0,type=0/0,len=0/0}{class=0/0,type=0/0,len=0/0}),flags(+key)),in_port(genev_sys_6081),skb_mark(0/0),ct_state(0x21/0x3f),ct_zone(0/0),ct_mark(0/0x41),ct_label(0/0),eth(src=0a:58:0a:f4:01:01,dst=0a:58:0a:f4:01:08),eth_type(0x0800),ipv4(src=10.244.0.3,dst=10.244.1.8,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=8080),tcp_flags(0/0), packets:540, bytes:39960, used:0.079s, flags:S, dp:ovs, actions:ct(commit,zone=24,mark=0/0x41,label=0/0xffff00000000000000000000,nat(src)),ece8a9a270c5ebb",
+      "ports": "system@ovs-system:\n  lookups: hit:482682 missed:1141 lost:0\n  flows: 78\n  masks: hit:1812679 total:27 hit/pkt:3.75\n  cache: hit:339423 hit-rate:70.15%\n  caches:\n    masks-cache: size:256\n  port 0: ovs-system (internal)\n  port 1: br-int (internal)\n  port 2: eth0\n  port 3: breth0 (internal)\n  port 4: genev_sys_6081 (geneve: packet_type=ptap)\n  port 5: ovn-k8s-mp0 (internal)\n  port 6: b79ecc072bcd381\n  port 7: 16ffa39141a409d\n  port 8: 9ac371ef943ec4d\n  port 9: 51a4ba04b4200ac\n  port 10: ece8a9a270c5ebb\n",
+      "interfaces": [
+        {
+          "external_ids": {
+            "attached_mac": "0a:58:0a:f4:01:08",
+            "iface-id": "ovn-light-topology_server",
+            "iface-id-ver": "2c8893dc-1050-43d7-b50c-495958ea6408",
+            "ip_addresses": "10.244.1.8/24",
+            "ovn-installed": "true",
+            "ovn-installed-ts": "1794934442474",
+            "pod-if-name": "eth0",
+            "sandbox": "ece8a9a270c5ebb578f7825ed1354e5bcf1e1213dddf241cecc56d1b2382d2d1"
+          },
+          "name": "ece8a9a270c5ebb",
+          "ofport": 9
+        }
+      ],
+      "detraces": {},
+      "flowCapturedAt": "2026-11-17T16:59:24.693947911Z",
+      "metadataAt": "2026-11-17T16:59:17.558340564Z",
+      "collection": {
+        "durationMs": 68,
+        "commands": 3,
+        "bytes": 44867,
+        "metadataCached": true,
+        "detraceHits": 39,
+        "flowComplete": true
+      }
+    }
+  ]
+}

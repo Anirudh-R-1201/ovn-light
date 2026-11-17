@@ -19,22 +19,27 @@ import (
 	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/ovn"
 	"github.com/trozet/ovn-light/internal/policy"
+	"github.com/trozet/ovn-light/internal/topology"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type App struct {
-	mu         sync.RWMutex
-	operation  sync.Mutex
-	snapshot   model.Snapshot
-	view       model.View
-	plans      map[string]*policy.Plan
-	Collector  *kube.Collector
-	Client     *kube.Client
-	Mode       string
-	Writes     bool
-	DataDir    string
-	collecting bool
+	mu            sync.RWMutex
+	analysis      sync.Mutex
+	operation     sync.Mutex
+	snapshot      model.Snapshot
+	view          model.View
+	plans         map[string]*policy.Plan
+	Collector     *kube.Collector
+	Client        *kube.Client
+	Mode          string
+	Writes        bool
+	DataDir       string
+	collecting    bool
+	topology      topology.Store
+	topologyMu    sync.Mutex
+	topologyCache map[string]topology.Graph
 }
 type diskPlan struct {
 	Plan        policy.Plan `json:"plan"`
@@ -72,17 +77,46 @@ func New(mode, dataDir string, client *kube.Client, collector *kube.Collector, w
 	return a, nil
 }
 func (a *App) Load(s model.Snapshot) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.analysis.Lock()
+	defer a.analysis.Unlock()
+	a.mu.RLock()
 	var previous *model.Snapshot
 	if a.snapshot.Version != 0 {
 		old := a.snapshot
 		previous = &old
 	}
+	a.mu.RUnlock()
+	v := ovn.Analyze(s, previous)
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.snapshot = s
-	a.view = ovn.Analyze(s, previous)
+	a.topology.Update(v)
+	v.Traffic = nil
+	a.view = v
 	a.view.Mode = a.Mode
 	a.view.WritesEnabled = a.Writes
+}
+func (a *App) Topology(o topology.Options) topology.Graph {
+	a.topologyMu.Lock()
+	defer a.topologyMu.Unlock()
+	a.mu.RLock()
+	now := time.Now().UTC()
+	if a.Mode != "live" {
+		now = a.snapshot.CapturedAt
+	}
+	revision := a.snapshot.CapturedAt.UnixNano()
+	s := a.topology.Snapshot()
+	a.mu.RUnlock()
+	key := fmt.Sprintf("%d/%d/%+v", revision, now.Unix()/15, o)
+	if cached, ok := a.topologyCache[key]; ok {
+		return cached
+	}
+	g := s.Graph(o, now)
+	if len(a.topologyCache) >= 32 || a.topologyCache == nil {
+		a.topologyCache = map[string]topology.Graph{}
+	}
+	a.topologyCache[key] = g
+	return g
 }
 func (a *App) State() model.View {
 	a.mu.RLock()
@@ -117,15 +151,14 @@ func (a *App) Refresh(ctx context.Context) error {
 	return nil
 }
 func (a *App) Run(ctx context.Context, interval time.Duration) {
-	_ = a.Refresh(ctx)
-	timer := time.NewTicker(interval)
-	defer timer.Stop()
 	for {
+		_ = a.Refresh(ctx)
+		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		case <-timer.C:
-			_ = a.Refresh(ctx)
 		}
 	}
 }

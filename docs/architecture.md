@@ -36,7 +36,7 @@ Conditional actions, cloning and unmodeled rewrites retain warnings and prevent 
 
 Counter deltas require the same node/UFID, unchanged actions and a nondecreasing counter. Resets produce no delta. Paths with a common terminal UFID share a counter: do not sum their counts. A cached flow can aggregate multiple tuples; an exact field does not turn a graph into a packet-by-packet trace.
 
-Datapath port numbers differ from OpenFlow port numbers. Interface external IDs map the datapath port name to a logical port and pod UID. NAD configuration supplies OVN network names, while NAD ownership identifies UDNs/CUDNs. Tunnel ingress can use its logical datapath key and SB bindings. Exact logical outport/metadata matches in terminal OpenFlow evidence can recover a destination through SB Port_Binding even when its address is wildcarded. There is no global IP-to-pod fallback across UDNs. Cross-node paths are not stitched into one end-to-end graph in this release.
+Datapath port numbers differ from OpenFlow port numbers. Interface external IDs map the datapath port name to a logical port and pod UID. NAD configuration supplies OVN network names, while NAD ownership identifies UDNs/CUDNs. Tunnel ingress can use its logical datapath key and SB bindings. Exact logical outport/metadata matches in terminal OpenFlow evidence can recover a destination through SB Port_Binding even when its address is wildcarded. There is no global IP-to-pod fallback across UDNs. The topology correlates compatible observations across nodes while retaining each observation point and its counter provenance. It does not reconstruct an end-to-end packet trace.
 
 ## Attribution
 
@@ -81,4 +81,69 @@ Collection never installs flow rules, enables packet sampling, clears counters o
 
 This cannot guarantee visibility of every hardware drop. Device ACLs outside OVS, packets dropped before flow installation, driver aggregation, delayed counters and expired cache entries are outside coverage. Translation-cache availability and provider output vary. KIND validates only the software path; hardware fixtures and device validation remain separate work.
 
-This release has no durable traffic time series, L7 parser, FQDN policy engine, automatic application dependency learning, multi-cluster relay, per-user Kubernetes impersonation or operator lifecycle management.
+Traffic history is bounded and in memory. This release has no durable traffic time series, L7 parser, FQDN policy engine, automatic application dependency learning, multi-cluster relay, per-user Kubernetes impersonation or operator lifecycle management.
+
+## Topology and scaling
+
+The Go analyzer emits one observation per terminal node/UFID counter. Named OVS
+output ports are resolved against `dpctl/show`. Known packet-length branches are
+traversed separately; downstream counters remain independent of the branch's
+input counter. A conditional output's parent counter is explicitly labeled
+`branch-input`, and does not establish successful forwarding. Unknown actions,
+shared paths, NAT and wildcard fields remain visible in the evidence.
+
+Network identity and pod UID scope the conversation key. Ports may stay unknown;
+we do not allocate a subnet-wide counter to one current pod. A sender may identify
+only the destination node, while the receiver identifies the pod and port. The
+node graph retains both observations; the pod graph keeps the unresolved endpoint
+separate. Source, receiver, local and drop counters are never added into a single
+end-to-end packet total. Deltas require a stable UFID, datapath, match, actions and
+offload state, increasing counters and a positive capture interval.
+
+The store retains at most 2,000 conversation keys, 60 collection frames and ten
+minutes. Each frame retains up to eight observation records per key. Shared
+counters have no per-connection rate. Windows include whole counter intervals,
+which can extend slightly before the requested start. No interpolation fabricates
+missing traffic. A suspected receiver gap requires repeated source activity over
+at least a minute, healthy receiver collection, precise endpoint/transport
+identity, and no compatible wildcard receiver observation. It remains a suspicion.
+A receiver collector failure is a telemetry gap. A red drop requires counter delta
+evidence; cumulative-only drops are labeled cached.
+
+`GET /api/topology` aggregates on the server. Query parameters are `network`,
+`node`, `level=nodes|pods`, `filter=all|drop|gap`, `sort=rate|drops`,
+`window=30..600` seconds and `limit=1..100`. `edge=<id>` returns up to 50 member
+traffic groups and their evidence/history. Hidden links and retention truncation
+are explicit. The browser polls a compact `/api/context` and topology response;
+it fetches full drop evidence only when requested. Up to 32 graph queries are
+cached per recent revision/time bucket, so viewers do not each rebuild the graph.
+
+Collection remains a central Kubernetes-exec implementation. It waits for the
+configured interval after each completed capture, with no overlapping or queued
+polls. Concurrency defaults to three nodes and is configurable from one to 16.
+The complete capture has a two-minute deadline; each node has 90 seconds and each
+command 15 seconds. Limits are 8 MiB per command output, 24 MiB of command output
+per node, and 64 MiB of serialized node evidence per snapshot. Omitted evidence
+is reported instead of being interpreted as absent traffic. Kubernetes inventory
+is separate from this node-evidence budget.
+
+OVN tables and unchanged UFID translations are cached per node for up to one
+minute (configurable from five seconds to five minutes). Changes to relevant
+Kubernetes object versions or the collector target invalidate the cache;
+changed flow matches/actions invalidate the individual translation. The cache
+budget uses serialized input size: at most 16 MiB per node and 32 MiB total.
+Decoded Go objects consume additional memory. Cold collection reads four OVN
+tables per node; warm collection needs only flow, port and interface dumps plus
+uncached translations. Pod-facing forwarded outputs need no translation lookup;
+remote outputs use only their terminal translation. Drop paths have priority
+within the lookup budget. Collectors reports time, command count, input bytes,
+metadata reuse and translation cache hits.
+
+This bounds the first implementation but does not remove its scaling costs:
+full datapath dumps are proportional to cached flows, inventory is still listed,
+and exec traverses the API server. Large-cluster work should introduce node-local
+DaemonSet collectors, watched Kubernetes/OVSDB inventory, authenticated bounded
+observation batches with epochs/sequence numbers, and partitioned aggregation.
+The observation model is independent of that transport. Multiple replicas of the
+current server would independently collect and would not share history or audit
+coordination; increasing Deployment replicas is not a scaling mechanism.

@@ -19,12 +19,15 @@ var cookieRE = regexp.MustCompile(`cookie[= ]+(?:0x)?([0-9a-fA-F]+)`)
 func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 	v := model.View{CollectedAt: s.CapturedAt, Findings: []model.Finding{}, Networks: Networks(s.Inventory), Nodes: []model.NodeStatus{}, Pods: []model.Endpoint{}, Errors: append([]string{}, s.Inventory.Errors...), Connections: s.Inventory.Resources["clusternetworkconnects"]}
 	attachments := Attachments(s.Inventory)
+	traffic := newTrafficIndex(s.Inventory, attachments)
 	for _, a := range attachments {
 		v.Pods = append(v.Pods, a.Endpoint)
 	}
 	old := map[string]datapath.Flow{}
+	oldNodes := map[string]model.NodeSnapshot{}
 	if previous != nil {
 		for _, n := range previous.Nodes {
+			oldNodes[n.Name] = n
 			fs, _ := datapath.Parse(n.Flows)
 			for _, f := range fs {
 				old[n.Name+"/"+f.ID] = f
@@ -33,14 +36,20 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 	}
 	for _, n := range s.Nodes {
 		flows, errs := datapath.Parse(n.Flows)
-		status := model.NodeStatus{Name: n.Name, Flows: len(flows), CapturedAt: n.CapturedAt, Errors: append(append([]string{}, n.Errors...), errs...)}
+		status := model.NodeStatus{Name: n.Name, Flows: len(flows), CapturedAt: flowTime(n), Collection: n.Collection, Errors: append(append([]string{}, n.Errors...), errs...)}
 		for _, f := range flows {
 			if f.Offloaded {
 				status.Offloaded++
 			}
 		}
 		v.Nodes = append(v.Nodes, status)
-		paths := datapath.Reconstruct(flows)
+		allPaths := datapath.ReconstructTraffic(flows, datapath.PortNames(n.Ports)...)
+		paths := make([]datapath.Path, 0)
+		for _, p := range allPaths {
+			if p.Verdict == "drop" {
+				paths = append(paths, p)
+			}
+		}
 		sharing := map[string]int{}
 		for _, p := range paths {
 			sharing[p.Flows[len(p.Flows)-1].ID]++
@@ -67,6 +76,12 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 			}
 			if len(candidates) == 1 {
 				dst = candidates[0]
+			}
+			if src.UID == "" && dst.Network != "" {
+				resolved := traffic.endpoint(dst.Network, p.Identity, "src")
+				if resolved.UID != "" {
+					src = resolved
+				}
 			}
 			proto, port := transport(p.Identity)
 			dst.Port = port
@@ -138,6 +153,7 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 			}
 			v.Findings = append(v.Findings, f)
 		}
+		v.Traffic = append(v.Traffic, traffic.traffic(n, allPaths, old, oldNodes[n.Name], v.Findings)...)
 	}
 	sort.Slice(v.Findings, func(i, j int) bool {
 		a, b := v.Findings[i], v.Findings[j]

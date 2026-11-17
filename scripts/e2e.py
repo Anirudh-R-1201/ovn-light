@@ -8,6 +8,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 
 
 class Harness:
@@ -75,8 +76,8 @@ class Harness:
         self.connection(source, dest, False)
         state = self.api('refresh', {})
         matches = [f for f in state['findings']
-                   if f['source'].get('uid') == source['uid']
-                   and f['source'].get('network') == source['network']
+                   if (f['source'].get('uid') == source['uid'] or self.args.lane == 'topology' and not f['source'].get('uid') and f['destination'].get('uid') == dest['uid'])
+                   and (f['source'].get('network') == source['network'] or self.args.lane == 'topology' and f['destination'].get('network') == source['network'])
                    and f['destination'].get('uid') in (None, '', dest['uid'])
                    and any(c['type'] == 'NetpolNamespace' for c in (f['causes'] or []))]
         assert matches, 'No attributed policy drop for the selected source and network'
@@ -145,11 +146,41 @@ class Harness:
             else:
                 verified = self.api(f"plans/{plan['id']}/verify", {})
                 assert verified['status'] == 'verified'
+            if self.args.lane == 'topology':
+                self.topology(source, dest)
             print(f'{namespace}: API apply opened TCP/8080; other ports' +
                   (' and the primary network' if primary else '') + ' remain denied.', flush=True)
         self.eventually(lambda: self.connection(source, dest, False))
         assert self.baseline(namespace) == before, 'Rollback changed a pre-existing policy or left an allowance'
         print(f'{namespace}: API rollback restored denial and preserved the original policies.', flush=True)
+
+    def topology(self, source, dest):
+        assert source['node'] != dest['node'], 'Topology fixture must exercise two nodes'
+        query = urllib.parse.urlencode({'network': source['network'], 'level': 'pods', 'limit': 100})
+        def observed():
+            self.api('refresh', {})
+            graph = self.api('topology?' + query)
+            members = []
+            for edge in graph['edges']:
+                nodes = {n['id']: n for n in graph['nodes']}
+                a, b = nodes[edge['source']].get('endpoint', {}), nodes[edge['destination']].get('endpoint', {})
+                if a.get('uid') == source['uid'] and b.get('uid') == dest['uid']:
+                    details = self.api('topology?' + query + '&edge=' + edge['id'])
+                    members.extend(details['edges'][0]['members'])
+            assert members, 'No cross-node pod traffic in topology'
+            node_graph = self.api('topology?' + urllib.parse.urlencode({'network': source['network'], 'level': 'nodes', 'limit': 100}))
+            node_map = {n['id']: n for n in node_graph['nodes']}
+            links = [e for e in node_graph['edges'] if node_map[e['source']]['node'] == source['node'] and node_map[e['destination']]['node'] == dest['node']]
+            assert any(e.get('sourceBytesPerSecond', 0) > 0 and e.get('receiverBytesPerSecond', 0) > 0 for e in links), 'Node-level source/receiver rates are not ready'
+            assert any(c['received']['packets'] > 0 for c in members), 'Receiver observation is missing'
+            counters = [o['counterID'] for c in members for o in c.get('observations', [])]
+            assert len(counters) == len(set(counters)), 'A recirculation counter was duplicated'
+            return graph
+        graph = self.eventually(observed)
+        other = self.api('topology?network=nonexistent-network')
+        assert not other['edges'], 'Network filter leaked traffic'
+        assert graph['hiddenEdges'] == 0, 'Small fixture unexpectedly truncated'
+        print('Topology: cross-node rates, resolved receiver pod identities, counter deduplication, and network filtering verified.', flush=True)
 
     def connect(self):
         source, _ = self.endpoints('ovn-light-red', 'primary')
@@ -215,7 +246,7 @@ class Harness:
         if self.args.artifacts:
             directory = Path(self.args.artifacts)
             directory.mkdir(parents=True, exist_ok=True)
-            for path in ['state', 'plans']:
+            for path in ['state', 'plans', 'topology']:
                 try:
                     (directory / f'{path}.json').write_text(json.dumps(self.api(path), indent=2) + '\n')
                 except Exception as error:
@@ -224,7 +255,7 @@ class Harness:
 
 def main(default_lane='cdn'):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--lane', choices=['cdn', 'udn', 'secondary', 'egress'], default=default_lane)
+    parser.add_argument('--lane', choices=['cdn', 'udn', 'secondary', 'egress', 'topology'], default=default_lane)
     parser.add_argument('--url', default='http://127.0.0.1:8080')
     parser.add_argument('--token-file', required=True)
     parser.add_argument('--kubeconfig')
@@ -234,7 +265,9 @@ def main(default_lane='cdn'):
     args = parser.parse_args()
     harness = Harness(args)
     try:
-        if args.lane == 'cdn':
+        if args.lane == 'topology':
+            harness.policy('ovn-light-topology', 'primary')
+        elif args.lane == 'cdn':
             harness.policy('ovn-light-demo', 'primary')
         elif args.lane == 'udn':
             harness.policy('ovn-light-red', 'primary')

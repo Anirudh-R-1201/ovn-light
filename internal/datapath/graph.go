@@ -7,16 +7,33 @@ import (
 )
 
 type Path struct {
-	Flows    []Flow
-	Identity map[string]string
-	Original map[string]string
-	Warnings []string
-	Complete bool
+	Flows              []Flow
+	Identity           map[string]string
+	Original           map[string]string
+	Warnings           []string
+	Complete           bool
+	Output             string
+	Verdict            string
+	ConditionalCounter bool
 }
 
 // Reconstruct follows compatible packet constraints rather than treating a
 // recirculation ID as a connection ID. Limits bound adversarial/large dumps.
 func Reconstruct(flows []Flow) []Path {
+	return reconstruct(flows, false, nil)
+}
+
+// ReconstructTraffic also retains output paths. The output counter is the
+// terminal flow's counter, not the sum of its recirculation predecessors.
+func ReconstructTraffic(flows []Flow, portNames ...string) []Path {
+	names := map[string]bool{}
+	for _, name := range portNames {
+		names[name] = true
+	}
+	return reconstruct(flows, true, names)
+}
+
+func reconstruct(flows []Flow, forward bool, names map[string]bool) []Path {
 	byStage := map[string][]Flow{}
 	for _, f := range flows {
 		byStage[f.Recirc] = append(byStage[f.Recirc], f)
@@ -45,6 +62,7 @@ func Reconstruct(flows []Flow) []Path {
 			p.Original = clone(m)
 		}
 		if Terminal(f.Actions) == "drop" {
+			p.Verdict = "drop"
 			paths = append(paths, p)
 			covered[f.ID] = true
 			return
@@ -54,12 +72,35 @@ func Reconstruct(flows []Flow) []Path {
 			seen2[k] = v
 		}
 		seen2[f.ID] = true
-		state, warnings := Transform(m, f.Actions)
-		p.Warnings = append(p.Warnings, warnings...)
-		p.Identity = state
-		for _, id := range Recircs(f.Actions) {
-			for _, next := range byStage[id] {
-				walk(next, p, seen2)
+		for _, branch := range actionBranches(f.Actions, 0) {
+			q := p
+			state, warnings := transform(m, branch.actions, names)
+			q.Warnings = append(append([]string{}, p.Warnings...), warnings...)
+			q.Identity = state
+			if forward {
+				for _, port := range outputs(branch.actions, names) {
+					out := q
+					out.Output, out.Verdict = port, "forward"
+					out.Identity = outputIdentity(m, branch.actions, port, names)
+					out.ConditionalCounter = branch.conditional
+					if branch.conditional {
+						out.Warnings = append(out.Warnings, "Conditional output: this counter measures input to the packet-length check; forwarding on this branch is unconfirmed.")
+					}
+					if len(paths) < maxPaths {
+						paths = append(paths, out)
+					}
+					covered[f.ID] = true
+				}
+			}
+			for _, id := range Recircs(branch.actions) {
+				for _, next := range byStage[id] {
+					if visits > 50000 || len(paths) >= maxPaths {
+						return
+					}
+					// A downstream flow has its own counter after the branch. Its
+					// counter does not include packets that took the other outcome.
+					walk(next, q, seen2)
+				}
 			}
 		}
 	}
@@ -69,8 +110,29 @@ func Reconstruct(flows []Flow) []Path {
 		}
 	}
 	for _, f := range flows {
-		if Terminal(f.Actions) == "drop" && !covered[f.ID] {
-			paths = append(paths, Path{Flows: []Flow{f}, Identity: clone(f.Match), Original: clone(f.Match), Warnings: []string{"Ingress path is missing or incompatible; identity is incomplete."}})
+		if len(paths) >= maxPaths {
+			break
+		}
+		if !covered[f.ID] {
+			p := Path{Flows: []Flow{f}, Identity: clone(f.Match), Original: clone(f.Match), Warnings: []string{"Ingress path is missing or incompatible; identity is incomplete."}}
+			if Terminal(f.Actions) == "drop" {
+				p.Verdict = "drop"
+				paths = append(paths, p)
+			} else if forward {
+				for _, branch := range actionBranches(f.Actions, 0) {
+					for _, port := range outputs(branch.actions, names) {
+						p.Output, p.Verdict = port, "forward"
+						p.Identity = outputIdentity(f.Match, branch.actions, port, names)
+						p.ConditionalCounter = branch.conditional
+						if branch.conditional {
+							p.Warnings = append(p.Warnings, "Conditional output: the counter precedes the packet-length check.")
+						}
+						if len(paths) < maxPaths {
+							paths = append(paths, p)
+						}
+					}
+				}
+			}
 		}
 	}
 	if len(paths) >= maxPaths || visits > 50000 {
@@ -82,7 +144,61 @@ func Reconstruct(flows []Flow) []Path {
 	return paths
 }
 
+type actionBranch struct {
+	actions     string
+	conditional bool
+}
+
+// OVN uses packet-length checks around tunnel output and recirculation. Follow
+// both branches, but never assign the parent counter to a confirmed drop.
+func actionBranches(actions string, depth int) []actionBranch {
+	if depth >= 4 {
+		return []actionBranch{{actions: actions}}
+	}
+	parts := Split(actions)
+	for i, a := range parts {
+		if !strings.HasPrefix(a, "check_pkt_len(") || !strings.HasSuffix(a, ")") {
+			continue
+		}
+		var out []actionBranch
+		for _, choice := range Split(a[len("check_pkt_len(") : len(a)-1]) {
+			if !(strings.HasPrefix(choice, "gt(") || strings.HasPrefix(choice, "le(")) || !strings.HasSuffix(choice, ")") {
+				continue
+			}
+			expanded := append(append([]string{}, parts[:i]...), choice[3:len(choice)-1])
+			expanded = append(expanded, parts[i+1:]...)
+			for _, b := range actionBranches(strings.Join(expanded, ","), depth+1) {
+				b.conditional = true
+				out = append(out, b)
+				if len(out) >= 16 {
+					return out
+				}
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return []actionBranch{{actions: actions}}
+}
+
 func Transform(match map[string]string, actions string) (map[string]string, []string) {
+	return transform(match, actions, nil)
+}
+
+// Later rewrites must not change the identity of an earlier output branch.
+func outputIdentity(match map[string]string, actions, port string, names map[string]bool) map[string]string {
+	var prefix []string
+	for _, a := range Split(actions) {
+		if out := outputs(a, names); len(out) > 0 && out[0] == port {
+			break
+		}
+		prefix = append(prefix, a)
+	}
+	m, _ := transform(match, strings.Join(prefix, ","), names)
+	return m
+}
+func transform(match map[string]string, actions string, names map[string]bool) (map[string]string, []string) {
 	m := clone(match)
 	var warnings []string
 	for _, a := range Split(actions) {
@@ -117,7 +233,9 @@ func Transform(match map[string]string, actions string) (map[string]string, []st
 		case strings.HasPrefix(a, "clone(") || strings.HasPrefix(a, "sample(") || strings.HasPrefix(a, "check_pkt_len("):
 			warnings = append(warnings, "Conditional or cloned actions need packet evidence: "+a)
 		default:
-			warnings = append(warnings, fmt.Sprintf("Action is not modeled during identity reconstruction: %s", a))
+			if len(outputs(a, names)) == 0 {
+				warnings = append(warnings, fmt.Sprintf("Action is not modeled during identity reconstruction: %s", a))
+			}
 		}
 	}
 	return m, warnings

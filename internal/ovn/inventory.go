@@ -166,7 +166,7 @@ func networkAliases(inv model.Inventory) (map[string]string, map[string]string) 
 	return aliases, names
 }
 func endpoint(p core.Pod, network, ip string) model.Endpoint {
-	return model.Endpoint{Namespace: p.Namespace, Pod: p.Name, UID: string(p.UID), Network: network, IP: ip, Labels: p.Labels}
+	return model.Endpoint{Node: p.Spec.NodeName, Namespace: p.Namespace, Pod: p.Name, UID: string(p.UID), Network: network, IP: ip, Labels: p.Labels}
 }
 
 func Networks(inv model.Inventory) []model.Network {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-cluster="${1:?Usage: test-lane.sh cluster-name cdn|udn|secondary|egress artifact-directory}"
+cluster="${1:?Usage: test-lane.sh cluster-name cdn|udn|secondary|egress|topology artifact-directory}"
 lane="${2:?Missing lane}"
 artifacts="${3:?Missing artifact directory}"
 context="kind-$cluster"
@@ -17,6 +17,7 @@ cleanup() {
 }
 trap cleanup EXIT
 case "$lane" in
+  topology) fixture=topology; namespaces=(ovn-light-topology) ;;
   cdn) fixture=denied-traffic; namespaces=(ovn-light-demo) ;;
   udn) fixture=user-defined-networks; namespaces=(ovn-light-red ovn-light-blue) ;;
   secondary) fixture=secondary-network; namespaces=(ovn-light-secondary) ;;

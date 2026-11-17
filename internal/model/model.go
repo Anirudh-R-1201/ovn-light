@@ -21,18 +21,30 @@ type Inventory struct {
 }
 
 type NodeSnapshot struct {
-	Name         string            `json:"name"`
-	CapturedAt   time.Time         `json:"capturedAt"`
-	Datapath     string            `json:"datapath"`
-	Flows        string            `json:"flows"`
-	Ports        string            `json:"ports"`
-	Interfaces   []Row             `json:"interfaces"`
-	Bindings     []Row             `json:"bindings"`
-	Datapaths    []Row             `json:"datapaths"`
-	LogicalFlows []Row             `json:"logicalFlows"`
-	ACLs         []Row             `json:"acls"`
-	Detraces     map[string]string `json:"detraces"`
-	Errors       []string          `json:"errors,omitempty"`
+	Name           string            `json:"name"`
+	CapturedAt     time.Time         `json:"capturedAt"`
+	Datapath       string            `json:"datapath"`
+	Flows          string            `json:"flows"`
+	Ports          string            `json:"ports"`
+	Interfaces     []Row             `json:"interfaces"`
+	Bindings       []Row             `json:"bindings"`
+	Datapaths      []Row             `json:"datapaths"`
+	LogicalFlows   []Row             `json:"logicalFlows"`
+	ACLs           []Row             `json:"acls"`
+	Detraces       map[string]string `json:"detraces"`
+	Errors         []string          `json:"errors,omitempty"`
+	FlowCapturedAt time.Time         `json:"flowCapturedAt,omitempty"`
+	MetadataAt     time.Time         `json:"metadataAt,omitempty"`
+	Collection     CollectionStats   `json:"collection"`
+}
+
+type CollectionStats struct {
+	DurationMS     int64 `json:"durationMs"`
+	Commands       int   `json:"commands"`
+	Bytes          int   `json:"bytes"`
+	MetadataCached bool  `json:"metadataCached"`
+	DetraceHits    int   `json:"detraceHits"`
+	FlowComplete   bool  `json:"flowComplete"`
 }
 
 type Snapshot struct {
@@ -43,6 +55,7 @@ type Snapshot struct {
 }
 
 type Endpoint struct {
+	Node       string            `json:"node,omitempty"`
 	Namespace  string            `json:"namespace,omitempty"`
 	Pod        string            `json:"pod,omitempty"`
 	UID        string            `json:"uid,omitempty"`
@@ -121,12 +134,39 @@ type View struct {
 	Pods          []Endpoint                  `json:"pods"`
 	Connections   []unstructured.Unstructured `json:"connections"`
 	Errors        []string                    `json:"errors"`
+	Traffic       []TrafficObservation        `json:"-"`
 }
 
 type NodeStatus struct {
-	Name       string    `json:"name"`
-	Flows      int       `json:"flows"`
-	Offloaded  int       `json:"offloaded"`
-	CapturedAt time.Time `json:"capturedAt"`
-	Errors     []string  `json:"errors"`
+	Name       string          `json:"name"`
+	Flows      int             `json:"flows"`
+	Offloaded  int             `json:"offloaded"`
+	CapturedAt time.Time       `json:"capturedAt"`
+	Errors     []string        `json:"errors"`
+	Collection CollectionStats `json:"collection"`
+}
+
+// A counter belongs to one observation point. Source and destination counters
+// remain separate even when they describe the same traffic.
+type TrafficObservation struct {
+	CounterID    string    `json:"counterID"`
+	Node         string    `json:"node"`
+	Network      string    `json:"network"`
+	Source       Endpoint  `json:"source"`
+	Destination  Endpoint  `json:"destination"`
+	Protocol     string    `json:"protocol"`
+	Verdict      string    `json:"verdict"`
+	Location     string    `json:"location"`
+	CounterScope string    `json:"counterScope"`
+	Packets      uint64    `json:"packets"`
+	Bytes        uint64    `json:"bytes"`
+	PacketDelta  *uint64   `json:"packetDelta,omitempty"`
+	ByteDelta    *uint64   `json:"byteDelta,omitempty"`
+	Start        time.Time `json:"start"`
+	End          time.Time `json:"end"`
+	Shared       bool      `json:"shared"`
+	Partial      bool      `json:"partial"`
+	Offloaded    bool      `json:"offloaded"`
+	Warnings     []string  `json:"warnings"`
+	FindingIDs   []string  `json:"findingIDs,omitempty"`
 }

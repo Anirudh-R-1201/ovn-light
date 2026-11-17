@@ -111,6 +111,7 @@ All jobs use ephemeral clusters and need no repository secrets.
 | `cdn` | Observed policy denial → inferred NetworkPolicy → admission dry-run → API apply → direct TCP and API Verify success → API rollback → denial restored |
 | `udn` | The same policy lifecycle on a primary UDN; then ClusterNetworkConnect proposal/apply → Accepted status **and actual cross-UDN TCP success** → rollback restores network separation |
 | `secondary` | Observed secondary drop → inferred MultiNetworkPolicy with exact NAD → API apply opens secondary TCP while primary stays denied → rollback restores secondary denial |
+| `topology` | Cross-node denial → reviewed allowance → node-level source/receiver rates and resolved receiver pod identities → network filtering and counter deduplication → rollback restores denial |
 | `egress` | Attributed external deny and rule index → dry-run leaves firewall unchanged → insert a host-IP TCP allowance before the deny → real external TCP and API Verify succeed → rollback restores denial and preserves firewall UID/rule order |
 
 Every policy lane also checks that TCP/8081 stays denied, dry-run leaves cluster
@@ -134,7 +135,7 @@ export KUBECONFIG="$(mktemp -d)/kubeconfig"
 export KIND_CLUSTER=ovn-light-ci-local
 scripts/ci/create-cluster.sh "$KIND_CLUSTER"
 scripts/deploy-kind.sh "$KIND_CLUSTER"
-for lane in cdn udn secondary egress; do
+for lane in cdn udn secondary egress topology; do
   scripts/ci/test-lane.sh "$KIND_CLUSTER" "$lane" ".artifacts/$lane"
 done
 scripts/ci/diagnostics.sh "$KIND_CLUSTER" .artifacts/diagnostics
@@ -150,3 +151,28 @@ module (`sudo modprobe openvswitch`). No hardware offload is enabled in these la
 CI always attempts diagnostic collection and cluster cleanup. Seven-day artifacts
 contain pod/controller logs, events, and the API's topology and proposal state;
 the upload excludes the sibling kubeconfig and temporary authentication token.
+
+## Topology validation
+
+`testdata/kind-topology.json` is a minimized real two-node capture. It exercises
+named outputs, packet-length branches and masked sender destinations. Its
+regression requires source-node activity and receiver pod identity while keeping
+the sender's subnet-wide destination unresolved. Other tests cover independent
+source/receiver totals, duplicate counters, shared-counter suppression, resets,
+retention/cardinality limits, overlapping networks and collector gaps.
+
+The browser smoke suite checks node links, pod drill-down, UDN filtering,
+connection details, and mobile layout. The `topology` KIND lane generates real
+cross-node traffic using `examples/topology.yaml`, applies an allowance through
+the API, observes counters at both nodes, and restores denial through rollback.
+A wildcarded receiver drop can require an explicit source choice in the proposal.
+Neither the test nor the UI invents that source from a subnet match.
+
+For a local aggregation benchmark:
+
+```sh
+go test ./internal/topology -run '^$' -bench BenchmarkTopology -benchmem
+```
+
+This measures aggregation of 2,000 synthetic traffic groups over 20 frames, not
+large-cluster capture throughput or hardware-offload accuracy.

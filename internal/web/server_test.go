@@ -2,13 +2,44 @@
 package web
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/trozet/ovn-light/internal/app"
+	"github.com/trozet/ovn-light/internal/topology"
 )
+
+func TestTopologyAuthenticationAndBounds(t *testing.T) {
+	a, _ := app.New("demo", "", nil, nil, false)
+	s := app.Demo()
+	a.Load(app.DemoBaseline(s))
+	a.Load(s)
+	h := Handler(a, "secret")
+	for _, path := range []string{"/api/topology", "/api/topology?limit=101", "/api/topology?window=-1", "/api/topology?level=invalid"} {
+		r := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 401 {
+			t.Fatal("topology bypassed auth", w.Code)
+		}
+		r.Header.Set("Authorization", "Bearer secret")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if path != "/api/topology" {
+			if w.Code != 400 {
+				t.Fatal(path, w.Code)
+			}
+			continue
+		}
+		var g topology.Graph
+		if err := json.Unmarshal(w.Body.Bytes(), &g); err != nil || len(g.Edges) == 0 {
+			t.Fatal(w.Code, err, g)
+		}
+	}
+}
 
 func TestAuthAndOrigin(t *testing.T) {
 	a, e := app.New("demo", "", nil, nil, false)

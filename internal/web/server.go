@@ -10,11 +10,13 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/trozet/ovn-light/internal/app"
 	"github.com/trozet/ovn-light/internal/policy"
+	"github.com/trozet/ovn-light/internal/topology"
 )
 
 //go:embed assets/*
@@ -24,6 +26,41 @@ func Handler(a *app.App, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, a.State(), nil) })
+	mux.HandleFunc("GET /api/context", func(w http.ResponseWriter, r *http.Request) {
+		v := a.State()
+		respond(w, map[string]any{"mode": v.Mode, "writesEnabled": v.WritesEnabled, "collectedAt": v.CollectedAt, "collecting": v.Collecting, "networks": v.Networks, "nodes": v.Nodes}, nil)
+	})
+	mux.HandleFunc("GET /api/topology", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		for _, field := range []string{"network", "node", "edge"} {
+			if len(q.Get(field)) > 256 {
+				respond(w, nil, fmt.Errorf("%s filter is too long", field))
+				return
+			}
+		}
+		limit, window := 40, 120
+		var err error
+		if q.Has("limit") {
+			limit, err = strconv.Atoi(q.Get("limit"))
+			if err != nil || limit < 1 || limit > 100 {
+				respond(w, nil, fmt.Errorf("limit must be 1–100"))
+				return
+			}
+		}
+		if q.Has("window") {
+			window, err = strconv.Atoi(q.Get("window"))
+			if err != nil || window < 30 || window > 600 {
+				respond(w, nil, fmt.Errorf("window must be 30–600 seconds"))
+				return
+			}
+		}
+		if level := q.Get("level"); level != "" && level != "nodes" && level != "pods" {
+			respond(w, nil, fmt.Errorf("level must be nodes or pods"))
+			return
+		}
+		o := topology.Options{Network: q.Get("network"), Node: q.Get("node"), Level: q.Get("level"), Filter: q.Get("filter"), Sort: q.Get("sort"), Edge: q.Get("edge"), Window: time.Duration(window) * time.Second, Limit: limit}
+		respond(w, a.Topology(o), nil)
+	})
 	mux.HandleFunc("GET /api/plans", func(w http.ResponseWriter, r *http.Request) { respond(w, a.Plans(), nil) })
 	mux.HandleFunc("GET /api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", `attachment; filename="ovn-light-snapshot.json"`)

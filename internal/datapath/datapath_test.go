@@ -124,3 +124,35 @@ func FuzzParse(f *testing.F) {
 		}
 	})
 }
+
+func TestForwardedNamedPortsAndOutputRewriteOrder(t *testing.T) {
+	flows, _ := Parse(`ufid:a,recirc_id(0),in_port(pod0),ipv4(src=10.0.0.1,dst=10.0.0.2),packets:10,actions:ct(zone=1),recirc(5)
+ufid:b,recirc_id(5),in_port(pod0),ipv4(dst=10.0.0.2),packets:10,actions:pod1,set(ipv4(dst=10.0.0.3)),pod2`)
+	paths := ReconstructTraffic(flows, "pod0", "pod1", "pod2")
+	if len(paths) != 2 || paths[0].Verdict != "forward" || paths[0].Output != "pod1" || paths[0].Identity["ipv4.dst"] != "10.0.0.2" || paths[1].Identity["ipv4.dst"] != "10.0.0.3" {
+		t.Fatal(paths)
+	}
+	if len(Reconstruct(flows)) != 0 {
+		t.Fatal("forwarded packets became drops")
+	}
+	if len(ReconstructTraffic(flows)) != 0 {
+		t.Fatal("unrecognized action was assumed to be an output")
+	}
+}
+
+func TestPacketLengthBranchesRetainCounterScope(t *testing.T) {
+	flows, _ := Parse(`ufid:a,recirc_id(0),in_port(1),ipv4(src=10.0.0.1,dst=10.0.1.0/24),packets:10,actions:check_pkt_len(size=1400,gt(drop),le(set(tunnel(src=192.0.2.1,dst=192.0.2.2)),geneve0))`)
+	p := ReconstructTraffic(flows, "geneve0")
+	if len(p) != 1 || p[0].Verdict != "forward" || !p[0].ConditionalCounter || p[0].Identity["tunnel.dst"] != "192.0.2.2" {
+		t.Fatal(p)
+	}
+	if len(Reconstruct(flows)) != 0 {
+		t.Fatal("conditional drop was assigned the parent counter")
+	}
+	flows, _ = Parse(`ufid:a,recirc_id(0),in_port(1),ipv4(src=10.0.0.1),packets:10,actions:check_pkt_len(size=1400,gt(userspace(pid=1)),le(recirc(8)))
+ufid:b,recirc_id(8),in_port(1),packets:6,actions:2`)
+	p = ReconstructTraffic(flows)
+	if len(p) != 1 || len(p[0].Flows) != 2 || p[0].ConditionalCounter || p[0].Flows[1].Packets != 6 {
+		t.Fatal(p)
+	}
+}

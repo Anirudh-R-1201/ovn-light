@@ -11,6 +11,7 @@ The name is an oven light: a way to see what is happening inside OVN while it is
 ## Features
 
 - Live collection from existing OVS/OVN containers without a packet sampler or changes to hardware offload configuration.
+- Live topology filtered by network, with node/pod drill-down, independent source/receiver rates, bounded recent history, and selectable drop evidence.
 - Drop paths with UFIDs, masks, recirculations, counter deltas, shared-counter warnings and raw OpenFlow evidence.
 - Pod and network identity, including primary UDNs and overlapping IP ranges. Filter by network, node, workload or policy.
 - Namespace default-deny ACL attribution when the translation cache and OVN stage hints are available.
@@ -86,6 +87,37 @@ go run ./cmd/ovn-light --snapshot /tmp/ovn-light.json
 
 Snapshots contain workload metadata, policies and network topology. Treat them as cluster diagnostic data. Captures are written with mode `0600`.
 
+## Live traffic topology
+
+Open **Topology**, choose a network, and select a node to explore its pods. The
+view ranks directed links by the highest observed rate at either end; filter to drops or unobserved
+receipts, choose a recent window, and limit the number of links on screen.
+Pods are grouped by their Kubernetes node. Selecting a link shows protocol/port
+groups, separate source and receiver counters, rate history, and observation
+coverage. Drop details lead into the existing policy review workflow.
+
+Two comparable captures are needed for rates. The first capture only establishes
+a baseline. Green means corresponding activity was observed at both ends; red
+marks measured drops; amber means receipt was not observed. Grey includes shared
+counters, incomplete reconstruction and stale collection. An absent receiver
+record does not establish packet loss. A counter before an OVN packet-length
+check is labeled as branch input, not confirmed tunnel transmission. Wildcarded
+subnet destinations remain unresolved pods even if only one current pod matches.
+
+`examples/topology.yaml` creates a continuously active client and server on
+separate nodes, initially denied by NetworkPolicy. It requires two schedulable
+nodes; it tolerates the KIND control-plane taint. Review client → server on the
+default network, TCP/8080, to allow the connection and observe forwarded traffic.
+
+Collection is one shared server job, independent of the number of browser tabs.
+The normal interval is 30 seconds after the previous collection finishes.
+`--collection-concurrency` defaults to 3; `--metadata-cache-ttl` defaults to 1 minute.
+The Collectors page reports duration, exec count, bytes read and cache hits.
+History is in memory, limited to 2,000 traffic groups and 60 collections over at
+most 10 minutes; truncation is visible. This remains a single-replica collector
+for initial deployments, not a production-scale certification. See
+[collection and scaling](docs/architecture.md#topology-and-scaling).
+
 ## UDNs and network connections
 
 Proposals opened from a drop keep its observed network fixed. The server infers the policy type from the actual pod attachment and records the scope in the proposal:
@@ -152,6 +184,6 @@ make image  # static binary in a scratch image; override IMAGE=... as needed
 
 Collection, reconstruction, policy planning and the backend are Go. The embedded UI uses HTML, CSS and plain JavaScript, with no frontend build step or CDN. Optional browser checks use Playwright: run the demo, then `node scripts/browser-smoke.cjs` with Playwright installed in your development environment.
 
-GitHub Actions runs Go race/vet checks, browser tests, and four isolated KIND integration lanes: CDN, primary UDN plus ClusterNetworkConnect, secondary MultiNetworkPolicy, and EgressFirewall. Each deploys OVN-Kubernetes and OVN-Light, observes a real policy drop, exercises proposal/apply/rollback through the API, and verifies traffic before and after. See [CI and local reproduction](docs/testing.md#continuous-integration).
+GitHub Actions runs Go race/vet checks, browser tests, and five isolated KIND integration lanes: CDN, primary UDN plus ClusterNetworkConnect, secondary MultiNetworkPolicy, EgressFirewall, and cross-node topology. Each deploys OVN-Kubernetes and OVN-Light, observes a real policy drop, exercises proposal/apply/rollback through the API, and verifies traffic before and after. See [CI and local reproduction](docs/testing.md#continuous-integration).
 
 Licensed under Apache-2.0. See [LICENSE](LICENSE).

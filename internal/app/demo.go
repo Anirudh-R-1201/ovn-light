@@ -3,6 +3,8 @@ package app
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/trozet/ovn-light/internal/model"
@@ -46,5 +48,33 @@ ufid:44444444-4444-4444-8444-444444444444, recirc_id(0x3b),in_port(7),eth_type(0
 		n.ACLs = append(n.ACLs, model.Row{"_uuid": acl, "action": "drop", "match": "outport == @" + namespace + "_default_deny && ip", "external_ids": map[string]any{"k8s.ovn.org/owner-type": "NetpolNamespace", "k8s.ovn.org/name": namespace, "direction": "Ingress"}})
 	}
 	s.Nodes = []model.NodeSnapshot{n}
+	remote := inv.Pods[1].DeepCopy()
+	remote.Labels = map[string]string{"app": "catalog"}
+	remote.Name = "catalog-9dd4"
+	remote.UID = "catalog-9dd4"
+	remote.Spec.NodeName = "kind-worker2"
+	remote.Annotations["k8s.ovn.org/pod-networks"] = `{"default":{"ip_addresses":["10.244.1.9/24"],"role":"primary"}}`
+	remote.Status.PodIPs = []core.PodIP{{IP: "10.244.1.9"}}
+	s.Inventory.Pods = append(s.Inventory.Pods, *remote)
+	s.Nodes[0].Flows += "\nufid:forward-a,recirc_id(0),in_port(4),ipv4(src=10.244.0.8,dst=10.244.1.9,proto=6),tcp(dst=8080),packets:1000,bytes:1250000,actions:9"
+	s.Nodes[0].Collection.FlowComplete = true
+	s.Nodes = append(s.Nodes, model.NodeSnapshot{Name: "kind-worker2", CapturedAt: now, Datapath: "system@ovs-system", Collection: model.CollectionStats{FlowComplete: true}, Ports: "system@ovs-system:\n  port 8: catalog0\n  port 9: geneve0\n", Interfaces: []model.Row{{"name": "catalog0", "external_ids": map[string]any{"iface-id": "payments_catalog-9dd4", "iface-id-ver": "catalog-9dd4"}}}, Flows: "ufid:forward-b,recirc_id(0),in_port(9),ipv4(src=10.244.0.8,dst=10.244.1.9,proto=6),tcp(dst=8080),packets:980,bytes:1225000,actions:8"})
+	return s
+}
+
+// DemoBaseline supplies a second synthetic counter reading, so the demo can
+// demonstrate rates without presenting cumulative counters as live traffic.
+func DemoBaseline(s model.Snapshot) model.Snapshot {
+	s.Nodes = append([]model.NodeSnapshot{}, s.Nodes...)
+	s.CapturedAt = s.CapturedAt.Add(-30 * time.Second)
+	counts := regexp.MustCompile(`(packets:|bytes:)([0-9]+)`)
+	for i := range s.Nodes {
+		s.Nodes[i].CapturedAt = s.CapturedAt
+		s.Nodes[i].Flows = counts.ReplaceAllStringFunc(s.Nodes[i].Flows, func(v string) string {
+			p := counts.FindStringSubmatch(v)
+			n, _ := strconv.ParseUint(p[2], 10, 64)
+			return p[1] + strconv.FormatUint(n/2, 10)
+		})
+	}
 	return s
 }

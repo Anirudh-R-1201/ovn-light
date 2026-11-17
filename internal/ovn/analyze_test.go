@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trozet/ovn-light/internal/app"
 	"github.com/trozet/ovn-light/internal/model"
@@ -30,6 +31,85 @@ func TestEgressFirewallRuleAttribution(t *testing.T) {
 		return
 	}
 	t.Fatal("external firewall drop was lost")
+}
+
+func TestForwardTrafficCounterAndLocalOutputIdentity(t *testing.T) {
+	s := app.Demo()
+	s.Nodes = s.Nodes[:1]
+	n := &s.Nodes[0]
+	n.Ports += "  port 8: api0\n"
+	n.Interfaces = append(n.Interfaces, model.Row{"name": "api0", "external_ids": map[string]any{"iface-id": "payments_api-6dc2", "iface-id-ver": "api-6dc2"}})
+	n.Flows = `ufid:entry,recirc_id(0),in_port(web0),ipv4(src=10.244.0.8,dst=10.96.0.10,proto=6),tcp(dst=8080),packets:100,bytes:10000,actions:ct(zone=1,nat),recirc(8)
+ufid:delivery,recirc_id(8),in_port(web0),ipv4(dst=0.0.0.0/0,proto=6),tcp(dst=0/0),packets:100,bytes:10000,actions:api0`
+	old := s
+	old.Nodes = append([]model.NodeSnapshot{}, s.Nodes...)
+	s.CapturedAt = s.CapturedAt.Add(30 * time.Second)
+	n.CapturedAt = s.CapturedAt
+	n.Flows = strings.ReplaceAll(strings.ReplaceAll(n.Flows, "packets:100", "packets:110"), "bytes:10000", "bytes:11000")
+	v := ovn.Analyze(s, &old)
+	if len(v.Traffic) != 1 {
+		t.Fatal(v.Traffic)
+	}
+	o := v.Traffic[0]
+	if o.Source.Pod != "web-7b49" || o.Destination.Pod != "api-6dc2" || o.Destination.Port != 0 || o.Location != "local" || o.PacketDelta == nil || *o.PacketDelta != 10 || *o.ByteDelta != 1000 {
+		t.Fatalf("NAT/output identity or terminal accounting: %+v", o)
+	}
+	n.Flows = strings.ReplaceAll(n.Flows, "packets:110", "packets:1")
+	if ovn.Analyze(s, &old).Traffic[0].PacketDelta != nil {
+		t.Fatal("reset became traffic")
+	}
+}
+
+func TestSharedForwardCounterDoesNotInventPodPair(t *testing.T) {
+	s := app.Demo()
+	s.Nodes = s.Nodes[:1]
+	n := &s.Nodes[0]
+	n.Flows = `ufid:a,recirc_id(0),in_port(4),ipv4(src=10.244.0.8,dst=10.244.0.12,proto=6),packets:3,actions:recirc(1)
+ufid:b,recirc_id(0),in_port(7),ipv4(src=10.40.0.8,dst=10.40.0.12,proto=6),packets:7,actions:recirc(1)
+ufid:c,recirc_id(1),in_port(0/0),ipv4(src=0.0.0.0/0,dst=0.0.0.0/0,proto=6),packets:10,actions:9`
+	v := ovn.Analyze(s, nil)
+	if len(v.Traffic) != 1 || !v.Traffic[0].Shared || v.Traffic[0].Source.UID != "" || v.Traffic[0].Destination.UID != "" {
+		t.Fatal(v.Traffic)
+	}
+}
+
+func TestRealCrossNodeTopologyKeepsWildcardDestinationUnknown(t *testing.T) {
+	b, err := os.ReadFile("../../testdata/kind-topology.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s model.Snapshot
+	if err = json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
+	old := app.DemoBaseline(s)
+	for i := range old.Nodes {
+		old.Nodes[i].FlowCapturedAt = s.Nodes[i].FlowCapturedAt.Add(-30 * time.Second)
+	}
+	v := ovn.Analyze(s, &old)
+	sent, received := false, false
+	seen := map[string]bool{}
+	for _, o := range v.Traffic {
+		if seen[o.CounterID] {
+			t.Fatal("duplicate counter", o.CounterID)
+		}
+		seen[o.CounterID] = true
+		if o.Source.Pod == "client" && o.Location == "source" && o.Destination.Node == "ovn-light-topology-ci-worker" {
+			if o.Destination.UID != "" {
+				t.Fatal("masked /24 became a specific destination pod", o)
+			}
+			if o.CounterScope != "branch-input" || !o.Partial || o.PacketDelta == nil || *o.PacketDelta == 0 {
+				t.Fatal(o)
+			}
+			sent = true
+		}
+		if o.Source.Pod == "client" && o.Destination.Pod == "server" && o.Location == "destination" && o.PacketDelta != nil && *o.PacketDelta > 0 {
+			received = true
+		}
+	}
+	if !sent || !received {
+		t.Fatalf("sent=%t received=%t: %+v", sent, received, v.Traffic)
+	}
 }
 
 func TestOverlappingUDNIPsDoNotCrossIdentity(t *testing.T) {

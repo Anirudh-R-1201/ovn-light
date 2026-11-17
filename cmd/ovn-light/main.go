@@ -46,6 +46,8 @@ func run() error {
 	sbdb := fs.String("sb-db", "unix:/var/run/ovn/ovnsb_db.sock", "OVN SB database address accessible inside the controller container")
 	interval := fs.Duration("interval", 30*time.Second, "Time between completed collection attempts")
 	maxDetraces := fs.Int("max-detraces", 64, "Maximum UFID translation lookups per node per collection")
+	concurrency := fs.Int("collection-concurrency", 3, "Maximum concurrent node collections (1–16)")
+	metadataTTL := fs.Duration("metadata-cache-ttl", time.Minute, "Maximum age of cached OVN tables and translations (5s–5m)")
 	writes := fs.Bool("enable-writes", false, "Enable reviewed Kubernetes changes using server credentials")
 	dataDir := fs.String("data-dir", "", "Persistent directory for change audit records (required for writes)")
 	output := fs.String("output", "ovn-light-snapshot.json", "Output file for capture command")
@@ -68,6 +70,12 @@ func run() error {
 	}
 	if *maxDetraces < 1 || *maxDetraces > 1024 {
 		return fmt.Errorf("max-detraces must be between 1 and 1024")
+	}
+	if *concurrency < 1 || *concurrency > 16 {
+		return fmt.Errorf("collection-concurrency must be 1–16")
+	}
+	if *metadataTTL < 5*time.Second || *metadataTTL > 5*time.Minute {
+		return fmt.Errorf("metadata-cache-ttl must be 5s–5m")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -97,7 +105,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		collector = &kube.Collector{Client: client, Namespace: *namespace, NBDB: *nbdb, SBDB: *sbdb, MaxDetraces: *maxDetraces}
+		collector = &kube.Collector{Client: client, Namespace: *namespace, NBDB: *nbdb, SBDB: *sbdb, MaxDetraces: *maxDetraces, Concurrency: *concurrency, CacheTTL: *metadataTTL}
 	}
 	if command == "capture" {
 		if collector != nil {
@@ -140,6 +148,9 @@ func run() error {
 		return err
 	}
 	if collector == nil {
+		if mode == "demo" {
+			a.Load(app.DemoBaseline(snapshot))
+		}
 		a.Load(snapshot)
 	} else {
 		go a.Run(ctx, *interval)
