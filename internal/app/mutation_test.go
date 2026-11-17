@@ -103,6 +103,9 @@ func liveFake(t *testing.T) (*App, policy.Intent) {
 	for k, gvr := range kube.Resources {
 		listKinds[gvr] = k + "List"
 	}
+	for k, gvr := range kube.DiagnosticResources {
+		listKinds[gvr] = k + "List"
+	}
 	dynamic := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), listKinds)
 	dynamic.PrependReactor("create", "*", func(action ktesting.Action) (bool, runtime.Object, error) {
 		a := action.(ktesting.CreateActionImpl)

@@ -20,12 +20,14 @@ import (
 	"github.com/trozet/ovn-light/internal/offload"
 	"github.com/trozet/ovn-light/internal/ovn"
 	"github.com/trozet/ovn-light/internal/policy"
+	"github.com/trozet/ovn-light/internal/routing"
 	"github.com/trozet/ovn-light/internal/topology"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type App struct {
+	routing       routing.Report
 	OffloadGrace  time.Duration
 	offload       offload.Store
 	mu            sync.RWMutex
@@ -90,6 +92,7 @@ func (a *App) Load(s model.Snapshot) {
 	}
 	a.mu.RUnlock()
 	v := ovn.Analyze(s, previous)
+	report := routing.Analyze(s, v, &a.routing)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.offload.Grace = a.OffloadGrace
@@ -100,6 +103,7 @@ func (a *App) Load(s model.Snapshot) {
 	}
 	v.Offload = model.OffloadReport{}
 	a.snapshot = s
+	a.routing = report
 	a.topology.Update(v)
 	v.Traffic = nil
 	a.view = v
@@ -127,6 +131,14 @@ func (a *App) Topology(o topology.Options) topology.Graph {
 	}
 	a.topologyCache[key] = g
 	return g
+}
+func (a *App) Routing(o routing.Options) routing.Report {
+	a.mu.RLock()
+	report := a.routing
+	stale := a.Mode == "live" && time.Since(a.snapshot.CapturedAt) > 2*time.Minute
+	a.mu.RUnlock()
+	o.Stale = stale
+	return routing.Filter(report, o)
 }
 func (a *App) Offload(o offload.Options) model.OffloadReport {
 	a.mu.RLock()

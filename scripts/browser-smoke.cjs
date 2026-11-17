@@ -113,7 +113,8 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   await require('./browser-allports.cjs')(browser,url,errors);
   await require('./browser-topology.cjs')(browser,url,errors);
   await require('./browser-offload.cjs')(browser,url,errors);
+  await require('./browser-routing.cjs')(browser,url,errors);
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('Browser smoke passed: unconfirmed sender candidates, explicit all-port scope and single-port verification, offload evidence and filtering, topology drill-down and filtering, network scope, demo/mobile layout, foreground probes, ordered EgressFirewall review.');
+  console.log('Browser smoke passed: BGP/uplink and EgressIP drill-down, ANP attribution, unconfirmed sender candidates, explicit all-port scope and single-port verification, offload evidence and filtering, topology drill-down and filtering, network scope, demo/mobile layout, foreground probes, ordered EgressFirewall review.');
  } finally {await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

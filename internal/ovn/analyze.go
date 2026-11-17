@@ -87,6 +87,7 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 			proto, port := transport(p.Identity)
 			dst.Port = port
 			causes := causesFor(n, p)
+			enrichAdminCauses(causes, s.Inventory, n.MetadataAt)
 			externalFirewall := false
 			for j := range causes {
 				if causes[j].Type == "EgressFirewall" {
@@ -137,6 +138,11 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 				if cause.Type == "EgressFirewall" && cause.Namespace == src.Namespace && src.Network == "default" && src.Role == "primary" && dst.IP != "" && dst.Pod == "" && port > 0 && p.Complete && !f.SharedCounter {
 					f.Confidence = "connection"
 					f.CanRecommend = true
+				}
+			}
+			for _, cause := range causes {
+				if cause.Admin != nil {
+					f.CanRecommend = false
 				}
 			}
 			for _, warning := range p.Warnings {

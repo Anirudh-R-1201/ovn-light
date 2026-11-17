@@ -182,6 +182,22 @@ be established. It does not infer domain names from IPs, resolve DNS on behalf o
 the workload, or create a second firewall. `examples/egress-firewall.yaml` provides
 an isolated namespace for exercising this workflow.
 
+## Routing, uplinks, EgressIP and administrative policies
+
+**Routing** displays node → uplink → BGP peer paths, filterable by network and
+node. Inspect a peer to see which PodNetwork or EgressIP prefixes are configured
+and which FRR actually reports as advertised. Uplink details include the host
+interface, OVS bridge, VRF, addresses, gateways and controller conditions.
+
+**EgressIP** shows selected pods, assigned egress nodes and exact OVN SNAT
+associations, with separate traffic observations where the datapath identifies
+them. Multiple assignments and incomplete evidence stay explicit. ANP/BANP drops
+show their policy and rule in **Issues**, including priority and the current rule;
+they do not offer an ineffective ordinary NetworkPolicy fix for ANP Deny.
+
+These are read-only integrations. See [routing evidence and setup](docs/routing.md)
+for FRR permissions, collection limits, missing APIs and validation coverage.
+
 ## Access and deployment model
 
 This is an administrator tool. The token grants access to the server’s service account; it does **not** impersonate the browser user’s Kubernetes identity. Use ClusterIP plus `kubectl port-forward`. An internet-facing deployment needs a TLS/authentication proxy and an appropriate authorization design.
@@ -201,6 +217,6 @@ make image  # static binary in a scratch image; override IMAGE=... as needed
 
 Collection, reconstruction, policy planning and the backend are Go. The embedded UI uses HTML, CSS and plain JavaScript, with no frontend build step or CDN. Optional browser checks use Playwright: run the demo, then `node scripts/browser-smoke.cjs` with Playwright installed in your development environment.
 
-GitHub Actions runs Go race/vet checks, browser tests, and five isolated KIND integration lanes: CDN, primary UDN plus ClusterNetworkConnect, secondary MultiNetworkPolicy, EgressFirewall, and cross-node topology. Each deploys OVN-Kubernetes and OVN-Light, observes a real policy drop, exercises proposal/apply/rollback through the API, and verifies traffic before and after. See [CI and local reproduction](docs/testing.md#continuous-integration).
+GitHub Actions runs Go race/vet checks, browser tests, and eight isolated KIND integration lanes: CDN, primary UDN plus ClusterNetworkConnect, secondary MultiNetworkPolicy, EgressFirewall, cross-node topology, ANP/BANP, EgressIP failover, and BGP/uplinks. Each deploys OVN-Kubernetes and OVN-Light and checks the corresponding evidence against real enforcement, traffic or routing state. Policy lanes exercise proposal/apply/rollback through the API. See [CI and local reproduction](docs/testing.md#continuous-integration).
 
 Licensed under Apache-2.0. See [LICENSE](LICENSE).

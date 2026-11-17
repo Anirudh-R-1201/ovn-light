@@ -32,6 +32,17 @@ kind load docker-image --name "$cluster" "ghcr.io/k8snetworkplumbingwg/multus-cn
 kubectl --context "$context" apply -f "$work_dir/multus.yaml"
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/network-attachment-definitions.k8s.cni.cncf.io crd/multi-networkpolicies.k8s.cni.cncf.io crd/ipamclaims.k8s.cni.cncf.io
 api_ip="$(kubectl --context "$context" get node "$cluster-control-plane" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
+features=()
+if [[ "${LANE:-}" == admin || "${LANE:-}" == routing ]]; then
+  for resource in adminnetworkpolicies baselineadminnetworkpolicies; do
+    kubectl --context "$context" apply --server-side -f "https://raw.githubusercontent.com/kubernetes-sigs/network-policy-api/$NETWORK_POLICY_API_VERSION/config/crd/standard/policy.networking.k8s.io_$resource.yaml"
+  done
+  features+=(--set global.enableAdminNetworkPolicy=true)
+fi
+if [[ "${LANE:-}" == routing ]]; then
+  kubectl --context "$context" apply --server-side -k "https://github.com/metallb/frr-k8s/config/default?ref=$FRR_K8S_VERSION"
+  features+=(--set global.enableRouteAdvertisements=true)
+fi
 chart="$work_dir/helm/ovn-kubernetes"
 helm --kube-context "$context" upgrade --install ovn-kubernetes "$chart" --namespace ovn-kubernetes --create-namespace \
   -f "$chart/values-single-node-zone.yaml" \
@@ -39,7 +50,7 @@ helm --kube-context "$context" upgrade --install ovn-kubernetes "$chart" --names
   --set global.image.repository=ovn-light-ci-ovn --set "global.image.tag=$OVN_REVISION" \
   --set global.image.pullPolicy=IfNotPresent --set global.enableOvnKubeIdentity=false \
   --set global.enableMultiNetwork=true --set global.enableNetworkSegmentation=true \
-  --set global.enableNetworkConnect=true --wait --timeout=8m
+  --set global.enableNetworkConnect=true "${features[@]}" --wait --timeout=8m
 kubectl --context "$context" wait --for=condition=Ready nodes --all --timeout=180s
 kubectl --context "$context" -n kube-system rollout status daemonset/kube-multus-ds --timeout=180s
 kubectl --context "$context" -n kube-system rollout status deployment/coredns --timeout=180s

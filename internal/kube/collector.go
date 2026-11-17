@@ -18,6 +18,8 @@ import (
 
 type Collector struct {
 	Client                *Client
+	RoutingEnabled        bool
+	routingCache          map[string]routingCache
 	Namespace, NBDB, SBDB string
 	MaxDetraces           int
 	Concurrency           int
@@ -28,7 +30,7 @@ type Collector struct {
 	offloadCache          map[string]offloadCache
 	exec                  func(context.Context, Target, []string) (string, error)
 }
-type nodeTargets struct{ ovs, ovn Target }
+type nodeTargets struct{ ovs, ovn, frr Target }
 
 type traceCache struct{ Signature, Text string }
 type nodeCache struct {
@@ -54,6 +56,9 @@ func inventoryKey(inv model.Inventory) string {
 		versions = append(versions, "ns/"+string(p.UID)+"/"+p.ResourceVersion)
 	}
 	for kind, resources := range inv.Resources {
+		if _, diagnostic := DiagnosticResources[kind]; diagnostic {
+			continue
+		}
 		for _, r := range resources {
 			versions = append(versions, kind+"/"+string(r.GetUID())+"/"+r.GetResourceVersion())
 		}
@@ -129,6 +134,14 @@ func (c *Collector) Capture(ctx context.Context) (model.Snapshot, error) {
 			}
 		}
 		targets[p.Spec.NodeName] = t
+	}
+	if c.RoutingEnabled {
+		for node, frr := range discoverFRR(inv) {
+			if t, ok := targets[node]; ok {
+				t.frr = frr
+				targets[node] = t
+			}
+		}
 	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -242,7 +255,7 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 		}
 		return rows
 	}
-	n.Interfaces = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=name,ofport,external_ids,type,options,status,error", "list", "Interface")
+	n.Interfaces = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=_uuid,name,ofport,external_ids,type,options,status,error,link_state,mtu,statistics", "list", "Interface")
 	n.Offload = c.captureOffload(ctx, name, t.ovs, execute)
 	key += fmt.Sprintf("/%v/%v", t.ovs, t.ovn)
 	cached := c.cached(name, key)
@@ -375,6 +388,9 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 	}
 	if ctx.Err() != nil {
 		n.Errors = append(n.Errors, "Node collection did not complete: "+ctx.Err().Error())
+	}
+	if c.RoutingEnabled {
+		n.Routing = c.captureRouting(name, t, execute)
 	}
 	return n
 }

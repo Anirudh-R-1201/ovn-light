@@ -106,6 +106,7 @@ func (c *Client) Inventory(ctx context.Context) (model.Inventory, error) {
 		}
 		i.Resources[name] = list.Items
 	}
+	c.diagnosticInventory(ctx, &i)
 	return i, nil
 }
 

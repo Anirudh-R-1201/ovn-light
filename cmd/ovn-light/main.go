@@ -109,7 +109,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		collector = &kube.Collector{Client: client, Namespace: *namespace, NBDB: *nbdb, SBDB: *sbdb, MaxDetraces: *maxDetraces, Concurrency: *concurrency, CacheTTL: *metadataTTL}
+		collector = &kube.Collector{RoutingEnabled: true, Client: client, Namespace: *namespace, NBDB: *nbdb, SBDB: *sbdb, MaxDetraces: *maxDetraces, Concurrency: *concurrency, CacheTTL: *metadataTTL}
 	}
 	if command == "capture" {
 		if collector != nil {

@@ -292,7 +292,7 @@ class Harness:
         if self.args.artifacts:
             directory = Path(self.args.artifacts)
             directory.mkdir(parents=True, exist_ok=True)
-            for path in ['state', 'plans', 'topology', 'snapshot']:
+            for path in ['state', 'plans', 'topology', 'routing', 'snapshot']:
                 try:
                     (directory / f'{path}.json').write_text(json.dumps(self.api(path), indent=2) + '\n')
                 except Exception as error:

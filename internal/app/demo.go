@@ -66,6 +66,7 @@ ufid:44444444-4444-4444-8444-444444444444, recirc_id(0x3b),in_port(7),eth_type(0
 	s.Nodes[0].Flows = strings.ReplaceAll(s.Nodes[0].Flows, "actions:", "offloaded:yes,dp:doca,actions:")
 	s.Nodes[0].Flows = strings.Replace(s.Nodes[0].Flows, "packets:41, bytes:2460, offloaded:yes,dp:doca,actions:drop", "packets:41, bytes:2460, offloaded:no,dp:ovs,actions:drop, dp-offload-info:'Synthetic example: action is unsupported'", 1)
 	s.Nodes[0].Flows = strings.Replace(s.Nodes[0].Flows, "packets:1000,bytes:1250000,", "packets:1000,bytes:1250000,partial_offload_packets:120,partial_offload_bytes:150000,", 1)
+	demoRouting(&s)
 	return s
 }
 

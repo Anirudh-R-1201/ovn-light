@@ -133,3 +133,27 @@ func TestOffloadAPIAuthenticationFiltersAndDetails(t *testing.T) {
 		}
 	}
 }
+
+func TestRoutingAuthenticationAndBounds(t *testing.T) {
+	a, _ := app.New("demo", "", nil, nil, false)
+	a.Load(app.Demo())
+	h := Handler(a, "secret")
+	for _, path := range []string{"/api/routing", "/api/routing?limit=101", "/api/routing?offset=-1"} {
+		req := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != 401 {
+			t.Fatal("routing bypassed auth", w.Code)
+		}
+		req.Header.Set("Authorization", "Bearer secret")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		want := 400
+		if path == "/api/routing" {
+			want = 200
+		}
+		if w.Code != want {
+			t.Fatal(path, w.Code, w.Body.String())
+		}
+	}
+}

@@ -190,3 +190,25 @@ issue navigation. The synthetic demo supplies these cases without hardware.
 Each KIND lane also checks `/api/offload`: nodes must report disabled and no
 offload issues. Hardware behavior still requires a NIC/DPU test environment;
 see [offload diagnostics](offload.md).
+
+## Routing integration lanes
+
+See [routing](routing.md) for the evidence model and runtime permissions. To run a
+new disposable cluster with the same feature flags as CI:
+
+```sh
+export KUBECONFIG=/tmp/ovn-light-routing-test.kubeconfig
+export LANE=routing # admin and egressip are also supported
+scripts/ci/create-cluster.sh ovn-light-routing-test
+scripts/deploy-kind.sh ovn-light-routing-test
+scripts/ci/test-lane.sh ovn-light-routing-test "$LANE" /tmp/ovn-light-routing-artifacts
+kind delete cluster --name ovn-light-routing-test
+```
+
+Do not point these fixtures at an existing user cluster. They create policy,
+EgressIP and RouteAdvertisements resources and alter assignable-node labels.
+The routing lane installs pinned FRR-k8s and uses an external Docker FRR peer.
+The EgressIP reservation uses a running Docker container with its IPv4 address
+removed, keeping the address allocated by Docker without responding to ARP.
+Test cleanup removes its EgressIP and external containers; deleting the disposable
+cluster removes the remaining Kubernetes fixtures. Snapshot artifacts have routing credentials stripped.

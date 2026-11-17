@@ -17,6 +17,7 @@ import (
 	"github.com/trozet/ovn-light/internal/app"
 	"github.com/trozet/ovn-light/internal/offload"
 	"github.com/trozet/ovn-light/internal/policy"
+	"github.com/trozet/ovn-light/internal/routing"
 	"github.com/trozet/ovn-light/internal/topology"
 )
 
@@ -51,6 +52,32 @@ func Handler(a *app.App, token string) http.Handler {
 			return
 		}
 		respond(w, a.Offload(offload.Options{Node: q.Get("node"), Network: q.Get("network"), Status: q.Get("status"), Search: q.Get("search"), ID: q.Get("id"), Limit: limit}), nil)
+	})
+	mux.HandleFunc("GET /api/routing", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		o := routing.Options{Network: q.Get("network"), Node: q.Get("node"), Search: q.Get("search"), Limit: 40}
+		for _, value := range []string{o.Network, o.Node, o.Search} {
+			if len(value) > 256 {
+				respond(w, nil, fmt.Errorf("filter is too long"))
+				return
+			}
+		}
+		var err error
+		if q.Has("limit") {
+			o.Limit, err = strconv.Atoi(q.Get("limit"))
+			if err != nil || o.Limit < 1 || o.Limit > 100 {
+				respond(w, nil, fmt.Errorf("limit must be 1–100"))
+				return
+			}
+		}
+		if q.Has("offset") {
+			o.Offset, err = strconv.Atoi(q.Get("offset"))
+			if err != nil || o.Offset < 0 || o.Offset > 100000 {
+				respond(w, nil, fmt.Errorf("invalid offset"))
+				return
+			}
+		}
+		respond(w, a.Routing(o), nil)
 	})
 	mux.HandleFunc("GET /api/context", func(w http.ResponseWriter, r *http.Request) {
 		v := a.State()

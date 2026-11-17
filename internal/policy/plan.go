@@ -119,6 +119,10 @@ func Fingerprint(inv model.Inventory) string {
 		add([]any{p.Namespace, p.Name, p.UID, p.Spec})
 	}
 	for k, rs := range inv.Resources {
+		switch k {
+		case "egressips", "routeadvertisements", "uplinks", "uplinkstates", "frrconfigurations", "bgpsessionstates", "frrnodestates":
+			continue
+		}
 		for _, r := range rs {
 			add([]any{k, r.GetNamespace(), r.GetName(), r.GetUID(), r.GetLabels(), r.GetAnnotations(), r.GetOwnerReferences(), r.Object["spec"]})
 		}
@@ -209,9 +213,9 @@ func buildPolicy(inv model.Inventory, p *Plan) error {
 	i.Source = sa.Endpoint
 	i.Destination = da.Endpoint
 	p.Intent = i
-	// Administrative policies govern primary networks. Their ordered rules must
+	// Administrative policies currently govern the cluster default network. Their ordered rules must
 	// be reviewed separately before proposing an ordinary NetworkPolicy.
-	if scope.Role == "primary" {
+	if scope.Network == "default" {
 		for _, kind := range []string{"adminnetworkpolicies", "baselineadminnetworkpolicies"} {
 			for _, r := range inv.Resources[kind] {
 				subject, _, _ := unstructured.NestedMap(r.Object, "spec", "subject")

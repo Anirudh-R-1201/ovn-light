@@ -113,3 +113,16 @@ func TestConnectChecksOverlapAndSelectors(t *testing.T) {
 		t.Fatal("overlap accepted")
 	}
 }
+
+func TestRoutingInventoryDoesNotInvalidatePolicyReview(t *testing.T) {
+	inv, _ := fixture()
+	before := Fingerprint(inv)
+	inv.Resources["frrconfigurations"] = []unstructured.Unstructured{{Object: map[string]any{"metadata": map[string]any{"name": "router"}, "spec": map[string]any{"bgp": map[string]any{}}}}}
+	if Fingerprint(inv) != before {
+		t.Fatal("unrelated routing state invalidated policy review")
+	}
+	inv.Resources["adminnetworkpolicies"] = []unstructured.Unstructured{{Object: map[string]any{"metadata": map[string]any{"name": "guard"}, "spec": map[string]any{"priority": int64(1)}}}}
+	if Fingerprint(inv) == before {
+		t.Fatal("administrative policy change did not invalidate review")
+	}
+}

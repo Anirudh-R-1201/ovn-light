@@ -12,15 +12,18 @@ import (
 type Row map[string]any
 
 type Inventory struct {
-	Pods       []core.Pod                             `json:"pods"`
-	Namespaces []core.Namespace                       `json:"namespaces"`
-	Policies   []netv1.NetworkPolicy                  `json:"policies"`
-	Services   []core.Service                         `json:"services"`
-	Resources  map[string][]unstructured.Unstructured `json:"resources"`
-	Errors     []string                               `json:"errors,omitempty"`
+	Nodes            []core.Node                            `json:"nodes,omitempty"`
+	DiagnosticErrors map[string]string                      `json:"diagnosticErrors,omitempty"`
+	Pods             []core.Pod                             `json:"pods"`
+	Namespaces       []core.Namespace                       `json:"namespaces"`
+	Policies         []netv1.NetworkPolicy                  `json:"policies"`
+	Services         []core.Service                         `json:"services"`
+	Resources        map[string][]unstructured.Unstructured `json:"resources"`
+	Errors           []string                               `json:"errors,omitempty"`
 }
 
 type NodeSnapshot struct {
+	Routing        RoutingEvidence   `json:"routing"`
 	Offload        OffloadEvidence   `json:"offload"`
 	Name           string            `json:"name"`
 	CapturedAt     time.Time         `json:"capturedAt"`
@@ -70,14 +73,15 @@ type Endpoint struct {
 }
 
 type PolicyCause struct {
-	Type      string `json:"type"`
-	Name      string `json:"name,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	Direction string `json:"direction,omitempty"`
-	Rule      string `json:"rule,omitempty"`
-	ACL       string `json:"acl"`
-	Action    string `json:"action"`
-	Match     string `json:"match,omitempty"`
+	Admin     *AdminPolicyEvidence `json:"admin,omitempty"`
+	Type      string               `json:"type"`
+	Name      string               `json:"name,omitempty"`
+	Namespace string               `json:"namespace,omitempty"`
+	Direction string               `json:"direction,omitempty"`
+	Rule      string               `json:"rule,omitempty"`
+	ACL       string               `json:"acl"`
+	Action    string               `json:"action"`
+	Match     string               `json:"match,omitempty"`
 }
 
 type Step struct {
