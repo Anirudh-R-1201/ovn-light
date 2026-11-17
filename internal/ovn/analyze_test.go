@@ -112,6 +112,37 @@ func TestRealCrossNodeTopologyKeepsWildcardDestinationUnknown(t *testing.T) {
 	}
 }
 
+func TestReceiverWildcardPreservesSourceNodeWithoutGuessingPod(t *testing.T) {
+	b, err := os.ReadFile("../../testdata/kind-topology.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s model.Snapshot
+	if err = json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
+	s.Nodes[1].Flows = strings.ReplaceAll(s.Nodes[1].Flows, "src=10.244.0.3,", "src=10.244.0.0/255.255.255.0,")
+	old := app.DemoBaseline(s)
+	for i := range old.Nodes {
+		old.Nodes[i].FlowCapturedAt = s.Nodes[i].FlowCapturedAt.Add(-30 * time.Second)
+	}
+	found := false
+	for _, o := range ovn.Analyze(s, &old).Traffic {
+		if o.Location != "destination" || o.Destination.Pod != "server" {
+			continue
+		}
+		if o.Source.UID != "" || o.Source.Node != "ovn-light-topology-ci-control-plane" {
+			t.Fatal("wildcard source must retain only its tunnel node", o)
+		}
+		if o.PacketDelta != nil && *o.PacketDelta > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("receiver counter with a masked source was lost")
+	}
+}
+
 func TestOverlappingUDNIPsDoNotCrossIdentity(t *testing.T) {
 	s := app.Demo()
 	other := s.Inventory.Pods[1].DeepCopy()

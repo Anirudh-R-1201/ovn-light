@@ -161,18 +161,27 @@ class Harness:
             self.api('refresh', {})
             graph = self.api('topology?' + query)
             members = []
+            evidence = []
             for edge in graph['edges']:
                 nodes = {n['id']: n for n in graph['nodes']}
                 a, b = nodes[edge['source']].get('endpoint', {}), nodes[edge['destination']].get('endpoint', {})
-                if a.get('uid') == source['uid'] and b.get('uid') == dest['uid']:
+                # A receiver can identify the tunnel's source node while its
+                # megaflow masks the source pod. Keep that identity unresolved.
+                if b.get('uid') == dest['uid'] and (a.get('uid') == source['uid'] or
+                        not a.get('uid') and a.get('node') == source['node']):
                     details = self.api('topology?' + query + '&edge=' + edge['id'])
+                    evidence.append(details)
                     members.extend(details['edges'][0]['members'])
+            if self.args.artifacts:
+                directory = Path(self.args.artifacts)
+                directory.mkdir(parents=True, exist_ok=True)
+                (directory / 'topology-receiver-evidence.json').write_text(json.dumps(evidence, indent=2) + '\n')
             assert members, 'No cross-node pod traffic in topology'
             node_graph = self.api('topology?' + urllib.parse.urlencode({'network': source['network'], 'level': 'nodes', 'limit': 100}))
             node_map = {n['id']: n for n in node_graph['nodes']}
             links = [e for e in node_graph['edges'] if node_map[e['source']]['node'] == source['node'] and node_map[e['destination']]['node'] == dest['node']]
             assert any(e.get('sourceBytesPerSecond', 0) > 0 and e.get('receiverBytesPerSecond', 0) > 0 for e in links), 'Node-level source/receiver rates are not ready'
-            assert any(c['received']['packets'] > 0 for c in members), 'Receiver observation is missing'
+            assert any(c['received']['packets'] > 0 for c in members), 'No measured receiver counter for the destination pod and source node'
             counters = [o['counterID'] for c in members for o in c.get('observations', [])]
             assert len(counters) == len(set(counters)), 'A recirculation counter was duplicated'
             return graph
@@ -246,7 +255,7 @@ class Harness:
         if self.args.artifacts:
             directory = Path(self.args.artifacts)
             directory.mkdir(parents=True, exist_ok=True)
-            for path in ['state', 'plans', 'topology']:
+            for path in ['state', 'plans', 'topology', 'snapshot']:
                 try:
                     (directory / f'{path}.json').write_text(json.dumps(self.api(path), indent=2) + '\n')
                 except Exception as error:
