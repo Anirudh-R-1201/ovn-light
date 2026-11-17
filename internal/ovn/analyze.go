@@ -204,6 +204,7 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 		}
 		return a.ID < b.ID
 	})
+	sourceContexts(&v, traffic)
 	v.Offload.CollectedAt = s.CapturedAt
 	return v
 }

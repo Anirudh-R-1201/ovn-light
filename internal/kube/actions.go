@@ -73,6 +73,9 @@ func (c *Client) Rollback(ctx context.Context, ref policy.ObjectRef, planID stri
 // Probe runs a fixed TCP connect command in the selected source pod. It neither
 // installs tools nor creates another pod whose identity would differ.
 func (c *Client) Probe(ctx context.Context, i policy.Intent) (string, error) {
+	if i.AllPorts || i.Port < 1 || i.Port > 65535 {
+		return "", fmt.Errorf("TCP verification requires one destination port between 1 and 65535")
+	}
 	if (i.Kind != "NetworkPolicy" && i.Kind != "EgressFirewall") || i.Protocol != "TCP" {
 		return "", fmt.Errorf("active verification is available for TCP policy proposals; use application tests for other protocols and network connections")
 	}

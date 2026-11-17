@@ -278,6 +278,9 @@ func (a *App) Prepare(ctx context.Context, i policy.Intent) (policy.Plan, error)
 	if err != nil {
 		return p, err
 	}
+	if evidence != nil && evidence.Source.UID == "" {
+		p.Warnings = append(p.Warnings, "The source workload was selected by the operator. The drop evidence does not confirm that workload as the sender.")
+	}
 	if p.FirewallChange != nil && evidence != nil {
 		matched := false
 		for _, cause := range evidence.Causes {
@@ -407,7 +410,7 @@ func (a *App) writeObject(ctx context.Context, p *policy.Plan, o unstructured.Un
 	}
 	return a.Client.Create(ctx, o, dryRun)
 }
-func (a *App) Verify(ctx context.Context, id string) (policy.Plan, error) {
+func (a *App) Verify(ctx context.Context, id string, port int) (policy.Plan, error) {
 	a.operation.Lock()
 	defer a.operation.Unlock()
 	p, ok := a.plans[id]
@@ -420,14 +423,40 @@ func (a *App) Verify(ctx context.Context, id string) (policy.Plan, error) {
 	if p.Status != "applied" && p.Status != "verified" {
 		return clonePlan(p), fmt.Errorf("apply the proposal before verifying it")
 	}
-	message, err := a.Client.Probe(ctx, p.Intent)
+	intent, err := probeIntent(p.Intent, port)
+	if err != nil {
+		return clonePlan(p), err
+	}
+	message, err := a.Client.Probe(ctx, intent)
+	p.VerificationPort = intent.Port
+	p.VerificationSucceeded = err == nil
 	if err != nil {
 		p.Status = "applied"
 		p.Verification = "Not verified: " + err.Error()
 	} else {
 		p.Status = "verified"
 		p.Verification = message
+		if p.Intent.AllPorts {
+			p.Status = "applied"
+			p.Verification += " Only this TCP port was tested; other ports were not verified."
+		}
 	}
 	saveErr := a.persist(p)
 	return clonePlan(p), errors.Join(err, saveErr)
+}
+
+func probeIntent(i policy.Intent, port int) (policy.Intent, error) {
+	if port < 0 || port > 65535 {
+		return i, fmt.Errorf("choose a TCP test port between 1 and 65535")
+	}
+	if i.AllPorts {
+		if port == 0 {
+			return i, fmt.Errorf("choose a specific listening TCP port to test this all-ports allowance")
+		}
+		i.Port = port
+		i.AllPorts = false
+	} else if port != 0 && port != i.Port {
+		return i, fmt.Errorf("test port must match the proposed destination port")
+	}
+	return i, nil
 }

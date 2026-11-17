@@ -161,6 +161,32 @@ class Harness:
         self.eventually(lambda: self.connection(source, dest, False))
         assert self.baseline(namespace) == before, 'Rollback changed a pre-existing policy or left an allowance'
         print(f'{namespace}: API rollback restored denial and preserved the original policies.', flush=True)
+        all_ports = self.api('plans', {'kind': 'Policy', 'source': source, 'destination': dest,
+                                      'protocol': 'TCP', 'allPorts': True})
+        assert all_ports['objects'][0]['spec']['ingress'][0]['ports'] == [{'protocol': 'TCP'}]
+        with self.applied(all_ports):
+            self.eventually(lambda: self.connection(source, dest, True))
+            # A closed second port must now return RST, rather than be denied.
+            def closed_listener():
+                result = self.probe(source, dest, port=8081)
+                assert result.returncode != 0 and 'refused' in result.stderr.lower(), result.stderr
+            self.eventually(closed_listener)
+            if primary:
+                self.connection(source, primary, False)
+            else:
+                try:
+                    self.api(f"plans/{all_ports['id']}/verify", {})
+                except RuntimeError as error:
+                    assert 'specific listening TCP port' in str(error), str(error)
+                else:
+                    raise AssertionError('All-port probe guessed a test port')
+                verified = self.api(f"plans/{all_ports['id']}/verify", {'port': 8080})
+                assert verified['status'] == 'applied' and verified['verificationSucceeded']
+                assert verified['verificationPort'] == 8080 and 'other ports were not verified' in verified['verification']
+        self.eventually(lambda: self.connection(source, dest, False))
+        assert self.baseline(namespace) == before, 'All-port rollback changed the original policies'
+        print(f'{namespace}: explicit all-TCP allowance, second-port reachability, scoped verification and rollback passed.', flush=True)
+
 
     def topology(self, source, dest):
         assert source['node'] != dest['node'], 'Topology fixture must exercise two nodes'

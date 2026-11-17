@@ -4,9 +4,11 @@ package app
 import (
 	"context"
 	"github.com/trozet/ovn-light/internal/offload"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/policy"
 )
 
@@ -106,5 +108,52 @@ func TestIncompleteOffloadPathRetainsWorkloadNetwork(t *testing.T) {
 	detail := a.Offload(offload.Options{ID: r.Paths[0].ID})
 	if len(detail.Nodes) != 1 || detail.Nodes[0].Name != "kind-worker" {
 		t.Fatal("unrelated node evidence returned", detail.Nodes)
+	}
+}
+
+func TestAllPortsProbeRequiresSpecificPort(t *testing.T) {
+	for _, tc := range []struct {
+		all   bool
+		port  int
+		valid bool
+	}{
+		{true, 0, false}, {true, -1, false}, {true, 65536, false}, {true, 8080, true}, {false, 0, true}, {false, 8080, true}, {false, 8081, false},
+	} {
+		i := policy.Intent{Protocol: "TCP", AllPorts: tc.all, Port: 8080}
+		if tc.all {
+			i.Port = 0
+		}
+		got, err := probeIntent(i, tc.port)
+		if (err == nil) != tc.valid {
+			t.Fatal(tc, got, err)
+		}
+		if tc.valid && (got.AllPorts || got.Port != 8080) {
+			t.Fatal("probe scope not explicit", got)
+		}
+	}
+}
+
+func TestUnconfirmedSenderWarningSurvivesReview(t *testing.T) {
+	a, _ := New("demo", "", nil, nil, false)
+	a.Load(Demo())
+	var intent policy.Intent
+	for j := range a.view.Findings {
+		f := &a.view.Findings[j]
+		if f.CanRecommend {
+			intent = policy.Intent{Kind: "Policy", FindingID: f.ID, Source: f.Source, Destination: f.Destination, Protocol: "TCP", AllPorts: true}
+			f.Source = model.Endpoint{Network: f.Source.Network, Node: f.Source.Node}
+			f.CanRecommend = false
+			break
+		}
+	}
+	if intent.FindingID == "" {
+		t.Fatal("missing finding")
+	}
+	p, err := a.Prepare(context.Background(), intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(p.Warnings, " "), "does not confirm") {
+		t.Fatal(p.Warnings)
 	}
 }

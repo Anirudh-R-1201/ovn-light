@@ -32,6 +32,7 @@ type Intent struct {
 	Destination   model.Endpoint `json:"destination"`
 	Protocol      string         `json:"protocol"`
 	Port          int            `json:"port"`
+	AllPorts      bool           `json:"allPorts,omitempty"`
 	Networks      []string       `json:"networks,omitempty"`
 	ConnectCIDR   string         `json:"connectCIDR,omitempty"`
 	NetworkPrefix int            `json:"networkPrefix,omitempty"`
@@ -45,23 +46,25 @@ type ObjectRef struct {
 	SpecHash  string `json:"specHash"`
 }
 type Plan struct {
-	ID             string                      `json:"id"`
-	Kind           string                      `json:"kind"`
-	Scope          *Scope                      `json:"scope,omitempty"`
-	FirewallChange *FirewallChange             `json:"firewallChange,omitempty"`
-	BeforeManifest string                      `json:"beforeManifest,omitempty"`
-	CreatedAt      time.Time                   `json:"createdAt"`
-	ExpiresAt      time.Time                   `json:"expiresAt"`
-	Intent         Intent                      `json:"intent"`
-	Fingerprint    string                      `json:"-"`
-	Summary        string                      `json:"summary"`
-	Manifests      string                      `json:"manifests"`
-	Objects        []unstructured.Unstructured `json:"objects"`
-	Affected       []string                    `json:"affected"`
-	Warnings       []string                    `json:"warnings"`
-	Status         string                      `json:"status"`
-	Applied        []ObjectRef                 `json:"applied"`
-	Verification   string                      `json:"verification,omitempty"`
+	ID                    string                      `json:"id"`
+	Kind                  string                      `json:"kind"`
+	Scope                 *Scope                      `json:"scope,omitempty"`
+	FirewallChange        *FirewallChange             `json:"firewallChange,omitempty"`
+	BeforeManifest        string                      `json:"beforeManifest,omitempty"`
+	CreatedAt             time.Time                   `json:"createdAt"`
+	ExpiresAt             time.Time                   `json:"expiresAt"`
+	Intent                Intent                      `json:"intent"`
+	Fingerprint           string                      `json:"-"`
+	Summary               string                      `json:"summary"`
+	Manifests             string                      `json:"manifests"`
+	Objects               []unstructured.Unstructured `json:"objects"`
+	Affected              []string                    `json:"affected"`
+	Warnings              []string                    `json:"warnings"`
+	Status                string                      `json:"status"`
+	Applied               []ObjectRef                 `json:"applied"`
+	VerificationPort      int                         `json:"verificationPort,omitempty"`
+	VerificationSucceeded bool                        `json:"verificationSucceeded,omitempty"`
+	Verification          string                      `json:"verification,omitempty"`
 }
 
 func Build(inv model.Inventory, intent Intent, id string) (Plan, error) {
@@ -69,6 +72,9 @@ func Build(inv model.Inventory, intent Intent, id string) (Plan, error) {
 	p.ExpiresAt = p.CreatedAt.Add(10 * time.Minute)
 	if len(inv.Errors) > 0 {
 		return p, fmt.Errorf("inventory is incomplete; refresh or fix collection permissions before proposing changes: %s", strings.Join(inv.Errors, "; "))
+	}
+	if intent.AllPorts && intent.Kind != "Policy" && intent.Kind != "NetworkPolicy" && intent.Kind != "MultiNetworkPolicy" {
+		return p, fmt.Errorf("all ports is supported only for NetworkPolicy and MultiNetworkPolicy proposals")
 	}
 	var err error
 	switch intent.Kind {
@@ -170,7 +176,10 @@ func buildPolicy(inv model.Inventory, p *Plan) error {
 	if i.Protocol != "TCP" && i.Protocol != "UDP" && i.Protocol != "SCTP" {
 		return fmt.Errorf("choose TCP, UDP or SCTP")
 	}
-	if i.Port < 1 || i.Port > 65535 {
+	if i.AllPorts && i.Port != 0 {
+		return fmt.Errorf("choose either a specific destination port or all ports")
+	}
+	if !i.AllPorts && (i.Port < 1 || i.Port > 65535) {
 		return fmt.Errorf("choose a destination port between 1 and 65535")
 	}
 	src, sa, err := findPod(inv, i.Source)
@@ -244,7 +253,10 @@ func buildPolicy(inv model.Inventory, p *Plan) error {
 		protocol := core.Protocol(i.Protocol)
 		port := intstr.FromInt32(int32(i.Port))
 		rulePeer := netv1.NetworkPolicyPeer{PodSelector: &peerSelector, NamespaceSelector: &namespaceSelector}
-		rulePort := netv1.NetworkPolicyPort{Protocol: &protocol, Port: &port}
+		rulePort := netv1.NetworkPolicyPort{Protocol: &protocol}
+		if !i.AllPorts {
+			rulePort.Port = &port
+		}
 		name := "ovn-light-" + p.ID[:12] + "-" + strings.ToLower(string(direction))
 		np := netv1.NetworkPolicy{TypeMeta: meta.TypeMeta{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"}, ObjectMeta: meta.ObjectMeta{Name: name, Namespace: target.Namespace, Labels: map[string]string{"app.kubernetes.io/managed-by": "ovn-light"}, Annotations: map[string]string{"ovn-light.io/plan": p.ID}}, Spec: netv1.NetworkPolicySpec{PodSelector: selector, PolicyTypes: []netv1.PolicyType{direction}}}
 		if direction == netv1.PolicyTypeIngress {
@@ -282,7 +294,12 @@ func buildPolicy(inv model.Inventory, p *Plan) error {
 	if len(p.Objects) == 0 {
 		return fmt.Errorf("current %s rules on %s already permit this connection; a new allow rule would not fix the drop. Inspect routing, other policy and OVN convergence", scope.PolicyKind, scope.Network)
 	}
-	p.Summary = fmt.Sprintf("Allow %s/%s → %s/%s on %s/%d · %s (%d additive %s resources)", src.Namespace, src.Name, dst.Namespace, dst.Name, i.Protocol, i.Port, scope.Network, len(p.Objects), scope.PolicyKind)
+	transport := fmt.Sprintf("%s/%d", i.Protocol, i.Port)
+	if i.AllPorts {
+		transport = "all " + i.Protocol + " ports"
+		p.Warnings = append(p.Warnings, "This explicitly allows every "+i.Protocol+" destination port for the selected workload selectors, including future listeners. Other protocols are not included by this rule.")
+	}
+	p.Summary = fmt.Sprintf("Allow %s/%s → %s/%s on %s · %s (%d additive %s resources)", src.Namespace, src.Name, dst.Namespace, dst.Name, transport, scope.Network, len(p.Objects), scope.PolicyKind)
 	if scope.Role == "primary" {
 		p.Warnings = append(p.Warnings, "NetworkPolicy follows the namespace's primary network. The ovn-light.io/network annotation records this proposal's scope; it does not select the network.")
 	} else {
@@ -320,6 +337,7 @@ func subjectMatches(inv model.Inventory, subject map[string]any, p core.Pod) boo
 }
 
 func directionAllowed(inv model.Inventory, target, peer, dst core.Pod, i Intent, direction netv1.PolicyType) (isolated, allowed bool) {
+	var ranges []portRange
 	for _, np := range inv.Policies {
 		if np.Namespace != target.Namespace || !selected(np.Spec.PodSelector, target.Labels) || !hasDirection(np, direction) {
 			continue
@@ -327,18 +345,23 @@ func directionAllowed(inv model.Inventory, target, peer, dst core.Pod, i Intent,
 		isolated = true
 		if direction == netv1.PolicyTypeIngress {
 			for _, r := range np.Spec.Ingress {
-				if peersMatch(inv, np.Namespace, r.From, peer, i.Source.IP) && portsMatch(r.Ports, dst, i) {
-					allowed = true
+				if peersMatch(inv, np.Namespace, r.From, peer, i.Source.IP) {
+					ranges = append(ranges, portRanges(r.Ports, dst, i.Protocol)...)
 				}
 			}
 		} else {
 			for _, r := range np.Spec.Egress {
-				if peersMatch(inv, np.Namespace, r.To, peer, i.Destination.IP) && portsMatch(r.Ports, dst, i) {
-					allowed = true
+				if peersMatch(inv, np.Namespace, r.To, peer, i.Destination.IP) {
+					ranges = append(ranges, portRanges(r.Ports, dst, i.Protocol)...)
 				}
 			}
 		}
 	}
+	lo, hi := i.Port, i.Port
+	if i.AllPorts {
+		lo, hi = 1, 65535
+	}
+	allowed = portsCover(ranges, lo, hi)
 	return
 }
 func hasDirection(np netv1.NetworkPolicy, d netv1.PolicyType) bool {
@@ -391,29 +414,56 @@ func peersMatch(inv model.Inventory, ns string, peers []netv1.NetworkPolicyPeer,
 	}
 	return false
 }
-func portsMatch(ports []netv1.NetworkPolicyPort, dst core.Pod, i Intent) bool {
-	if len(ports) == 0 {
-		return true
+
+type portRange struct{ start, end int }
+
+// All-port coverage is the union of rules whose peers match this intent.
+// Separate ranges can cover TCP completely without granting UDP permission.
+func portsCover(ranges []portRange, lo, hi int) bool {
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i].start < ranges[j].start })
+	next := lo
+	for _, r := range ranges {
+		if r.start > next {
+			return false
+		}
+		if r.end >= next {
+			next = r.end + 1
+		}
+		if next > hi {
+			return true
+		}
 	}
+	return false
+}
+func portsMatch(ports []netv1.NetworkPolicyPort, dst core.Pod, i Intent) bool {
+	lo, hi := i.Port, i.Port
+	if i.AllPorts {
+		lo, hi = 1, 65535
+	}
+	return portsCover(portRanges(ports, dst, i.Protocol), lo, hi)
+}
+func portRanges(ports []netv1.NetworkPolicyPort, dst core.Pod, wanted string) []portRange {
+	if len(ports) == 0 {
+		return []portRange{{1, 65535}}
+	}
+	var result []portRange
 	for _, p := range ports {
 		protocol := core.ProtocolTCP
 		if p.Protocol != nil {
 			protocol = *p.Protocol
 		}
-		if string(protocol) != i.Protocol {
+		if string(protocol) != wanted {
 			continue
 		}
 		if p.Port == nil {
-			return true
+			return []portRange{{1, 65535}}
 		}
 		if p.Port.Type == intstr.Int {
 			end := p.Port.IntVal
 			if p.EndPort != nil {
 				end = *p.EndPort
 			}
-			if int(p.Port.IntVal) <= i.Port && i.Port <= int(end) {
-				return true
-			}
+			result = append(result, portRange{int(p.Port.IntVal), int(end)})
 		} else {
 			for _, c := range dst.Spec.Containers {
 				for _, port := range c.Ports {
@@ -421,12 +471,12 @@ func portsMatch(ports []netv1.NetworkPolicyPort, dst core.Pod, i Intent) bool {
 					if proto == "" {
 						proto = core.ProtocolTCP
 					}
-					if port.Name == p.Port.StrVal && int(port.ContainerPort) == i.Port && proto == protocol {
-						return true
+					if port.Name == p.Port.StrVal && proto == protocol {
+						result = append(result, portRange{int(port.ContainerPort), int(port.ContainerPort)})
 					}
 				}
 			}
 		}
 	}
-	return false
+	return result
 }

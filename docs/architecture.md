@@ -36,7 +36,12 @@ Conditional actions, cloning and unmodeled rewrites retain warnings and prevent 
 
 Counter deltas require the same node/UFID, unchanged actions and a nondecreasing counter. Resets produce no delta. Paths with a common terminal UFID share a counter: do not sum their counts. A cached flow can aggregate multiple tuples; an exact field does not turn a graph into a packet-by-packet trace.
 
-Datapath port numbers differ from OpenFlow port numbers. Interface external IDs map the datapath port name to a logical port and pod UID. NAD configuration supplies OVN network names, while NAD ownership identifies UDNs/CUDNs. Tunnel ingress can use its logical datapath key and SB bindings. Exact logical outport/metadata matches in terminal OpenFlow evidence can recover a destination through SB Port_Binding even when its address is wildcarded. There is no global IP-to-pod fallback across UDNs. The topology correlates compatible observations across nodes while retaining each observation point and its counter provenance. It does not reconstruct an end-to-end packet trace.
+Datapath port numbers differ from OpenFlow port numbers. Interface external IDs map the datapath port name to a logical port and pod UID. NAD configuration supplies OVN network names, while NAD ownership identifies UDNs/CUDNs. Tunnel ingress can use its logical datapath key and SB bindings. Exact logical outport/metadata matches in terminal OpenFlow evidence can recover a destination through SB Port_Binding even when its address is wildcarded. There is no global IP-to-pod fallback across UDNs. An unresolved source retains
+its tunnel source node and masked address constraint. Up to eight inventory
+candidates are displayed on the known source network, or the destination network
+as an explicitly tentative scope. Separate positive outgoing counter deltas
+within 90 seconds can prioritize a candidate; they never fill the source identity
+or unknown destination port. The operator must select an intended sender. The topology correlates compatible observations across nodes while retaining each observation point and its counter provenance. It does not reconstruct an end-to-end packet trace.
 
 ## Attribution
 
@@ -47,6 +52,13 @@ Attribution is best effort: cache eviction, absent hints, cookie collisions, sha
 ## Proposals
 
 Policy proposals require current labeled pods on the same network. The server derives NetworkPolicy for primary attachments and MultiNetworkPolicy for secondary attachments. Drop-based proposals retain the observed network; unresolved evidence and manually started reviews require an explicit selection. The review and audit record show the network, role, policy API and NADs.
+
+An explicit `allPorts: true` intent requires `port` to be omitted or zero. The
+manifest retains `ports: [{protocol: TCP}]` (or the selected UDP/SCTP protocol),
+omitting only the port number. This follows the [NetworkPolicyPort API](https://kubernetes.io/docs/reference/kubernetes-api/networking/network-policy-v1/#networkpolicyport).
+Coverage is the union of matching port ranges across policies for the same peer
+and protocol; one permitted port does not satisfy an all-ports request. This
+option applies to NetworkPolicy and MultiNetworkPolicy, not EgressFirewall.
 
 Both directions are evaluated, including peer selectors (namespace AND pod), IPBlock exceptions, port ranges, protocols and named ports. Secondary evaluation includes only MultiNetworkPolicies whose `policy-for` NADs resolve to the selected OVN network. Each generated policy targets the appropriate attachment's NAD; primary NetworkPolicies do not receive a `policy-for` annotation. Multiple NADs may share one OVN network. Only isolated directions lacking an allowance receive a policy, and the affected-pod list includes only attachments on that network.
 
@@ -72,6 +84,11 @@ is created or deleted. A later spec edit blocks rollback instead of overwriting 
 Plans expire after ten minutes. Applying fetches inventory again, checks policy/network/identity inputs and repeats admission dry-run. NetworkPolicy, MultiNetworkPolicy and CNC actions create generated objects. EgressFirewall actions patch the existing rule list. Multi-object creation is not transactional: partial failure is recorded, and positively recorded objects remain eligible for rollback. Policy changes can race the final inventory read; Kubernetes has no transaction spanning this check and all resource creates.
 
 Audit records are atomically replaced JSON files in `--data-dir`. Use persistent storage and one replica. An interrupted mutation is marked on restart. A timed-out write may still have reached the API server: inspect all proposed object names before generating another plan. Rollback rejects changed UIDs, ownership, specs, MultiNetworkPolicy target annotations or resource versions. The audit is an administrative record, not a tamper-proof compliance log.
+
+For an all-ports plan, `/api/plans/{id}/verify` requires a JSON `port` (1–65535).
+It records `verificationPort` and `verificationSucceeded`; success leaves the plan
+`applied`, because only one listening port has been tested. Specific-port plans
+continue to accept an empty object and reject a different test port.
 
 Primary-network and EgressFirewall verification run an explicit TCP connection from the source container using an existing `python3`, `/agnhost` or `nc`. It installs nothing and does not substitute another pod identity. Success proves transport reachability, not application behavior. Secondary networks require a probe on the selected interface; the built-in probe is disabled for MultiNetworkPolicy proposals. UDP/SCTP and CNC verification also require application tests.
 

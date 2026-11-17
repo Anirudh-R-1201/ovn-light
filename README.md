@@ -68,6 +68,19 @@ The example continuously attempts TCP/8080 from `client` to `server`, while `iso
 5. Use **Verify TCP connection**. The example grants probe permission only in its namespace.
 6. Use **Roll back created resources** to remove the allowance. The original deny policy is preserved.
 
+If the port is unknown and you intend to allow every TCP port, select **TCP** and
+check **All TCP ports** in the connection form. The proposal keeps the selected
+network and workload selectors, and its review explicitly lists the broader port
+scope. An empty port field alone never means all ports. After applying, choose a
+known listening port for **Verify selected TCP port**; success verifies only that
+port, not the whole allowance. The same option supports UDP and SCTP policies,
+with application tests required for verification.
+
+For a masked source address, drop evidence shows the known node and source
+subnet, plus candidate pods on the candidate network. Recent outgoing activity
+is highlighted separately. **Review with this candidate** selects your intended
+sender explicitly; it does not turn the candidate into a confirmed source.
+
 An API write is not a successful connectivity test. A disappearing cache entry is not considered success either.
 
 ### Run locally against a cluster

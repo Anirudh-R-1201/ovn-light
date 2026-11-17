@@ -32,3 +32,12 @@ func TestMultiPolicyRollbackGuardsNetworkAnnotation(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestProbeRefusesUnspecifiedOrBroadPortBeforeExec(t *testing.T) {
+	c := &Client{}
+	for _, i := range []policy.Intent{{Protocol: "TCP", AllPorts: true}, {Protocol: "TCP", Port: 0}, {Protocol: "TCP", Port: 65536}, {Protocol: "TCP", Port: -1}} {
+		if _, err := c.Probe(context.Background(), i); err == nil {
+			t.Fatal("invalid probe accepted", i)
+		}
+	}
+}

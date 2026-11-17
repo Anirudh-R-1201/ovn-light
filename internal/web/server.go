@@ -119,7 +119,16 @@ func Handler(a *app.App, token string) http.Handler {
 		case "rollback":
 			p, err = a.Rollback(r.Context(), id)
 		case "verify":
-			p, err = a.Verify(r.Context(), id)
+			var probe struct {
+				Port int `json:"port"`
+			}
+			if r.ContentLength != 0 {
+				if err = decode(w, r, &probe); err != nil {
+					respond(w, nil, err)
+					return
+				}
+			}
+			p, err = a.Verify(r.Context(), id, probe.Port)
 		default:
 			http.NotFound(w, r)
 			return

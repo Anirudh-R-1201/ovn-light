@@ -91,24 +91,38 @@ type Step struct {
 	OpenFlow  string            `json:"openFlow,omitempty"`
 }
 
+type SourceCandidate struct {
+	Endpoint Endpoint `json:"endpoint"`
+	Observed bool     `json:"observed"`
+	Evidence string   `json:"evidence"`
+}
+
+type SourceContext struct {
+	Address         string            `json:"address,omitempty"`
+	Network         string            `json:"network,omitempty"`
+	Candidates      []SourceCandidate `json:"candidates"`
+	TotalCandidates int               `json:"totalCandidates"`
+}
+
 type Finding struct {
-	ID            string        `json:"id"`
-	Node          string        `json:"node"`
-	Title         string        `json:"title"`
-	Source        Endpoint      `json:"source"`
-	Destination   Endpoint      `json:"destination"`
-	Protocol      string        `json:"protocol"`
-	Verdict       string        `json:"verdict"`
-	Confidence    string        `json:"confidence"`
-	Packets       uint64        `json:"packets"`
-	Delta         *uint64       `json:"delta,omitempty"`
-	CounterID     string        `json:"counterID"`
-	SharedCounter bool          `json:"sharedCounter"`
-	ObservedAt    time.Time     `json:"observedAt"`
-	Causes        []PolicyCause `json:"causes"`
-	Steps         []Step        `json:"steps"`
-	Warnings      []string      `json:"warnings"`
-	CanRecommend  bool          `json:"canRecommend"`
+	SourceContext *SourceContext `json:"sourceContext,omitempty"`
+	ID            string         `json:"id"`
+	Node          string         `json:"node"`
+	Title         string         `json:"title"`
+	Source        Endpoint       `json:"source"`
+	Destination   Endpoint       `json:"destination"`
+	Protocol      string         `json:"protocol"`
+	Verdict       string         `json:"verdict"`
+	Confidence    string         `json:"confidence"`
+	Packets       uint64         `json:"packets"`
+	Delta         *uint64        `json:"delta,omitempty"`
+	CounterID     string         `json:"counterID"`
+	SharedCounter bool           `json:"sharedCounter"`
+	ObservedAt    time.Time      `json:"observedAt"`
+	Causes        []PolicyCause  `json:"causes"`
+	Steps         []Step         `json:"steps"`
+	Warnings      []string       `json:"warnings"`
+	CanRecommend  bool           `json:"canRecommend"`
 }
 
 type Network struct {
