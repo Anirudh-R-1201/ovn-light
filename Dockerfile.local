@@ -1,0 +1,6 @@
+# Build with `make image` to reuse the local Go module cache.
+FROM scratch
+COPY bin/ovn-light /ovn-light
+USER 10001:10001
+EXPOSE 8080
+ENTRYPOINT ["/ovn-light"]

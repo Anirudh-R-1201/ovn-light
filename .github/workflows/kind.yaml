@@ -1,0 +1,67 @@
+name: KIND integration
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kind-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: KIND / ${{ matrix.lane }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [cdn, udn, secondary]
+    env:
+      KIND_CLUSTER: ovn-light-ci
+      KUBECONFIG: ${{ github.workspace }}/.artifacts/kubeconfig
+      ARTIFACTS: ${{ github.workspace }}/.artifacts/${{ matrix.lane }}
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Install pinned KIND, kubectl and Helm
+      run: |
+        scripts/ci/install-tools.sh "$RUNNER_TEMP/ovn-light-bin"
+        echo "$RUNNER_TEMP/ovn-light-bin" >> "$GITHUB_PATH"
+    - name: Prepare host for OVS
+      run: |
+        sudo modprobe openvswitch
+        sudo sysctl -w fs.inotify.max_user_instances=8192 fs.inotify.max_user_watches=524288
+    - name: Create KIND and install matching OVN image and chart
+      run: |
+        mkdir -p "$ARTIFACTS"
+        scripts/ci/create-cluster.sh "$KIND_CLUSTER"
+    - name: Build and deploy OVN-Light
+      run: scripts/deploy-kind.sh "$KIND_CLUSTER"
+    - name: Detect, propose, apply, verify and roll back
+      env:
+        LANE: ${{ matrix.lane }}
+      run: scripts/ci/test-lane.sh "$KIND_CLUSTER" "$LANE" "$ARTIFACTS"
+    - name: Collect diagnostics
+      if: always()
+      run: scripts/ci/diagnostics.sh "$KIND_CLUSTER" "$ARTIFACTS"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      if: always()
+      with:
+        name: kind-${{ matrix.lane }}
+        path: ${{ env.ARTIFACTS }}
+        include-hidden-files: true
+        if-no-files-found: warn
+        retention-days: 7
+    - name: Delete disposable cluster
+      if: always()
+      run: kind delete cluster --name "$KIND_CLUSTER"

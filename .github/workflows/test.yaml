@@ -1,0 +1,38 @@
+name: Unit and browser tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        persist-credentials: false
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version: '22'
+    - run: make test check build
+    - name: Check test scripts
+      run: |
+        shellcheck -x scripts/ci/*.sh scripts/deploy-kind.sh
+        python3 -m py_compile scripts/*.py
+    - name: Install browser test dependencies
+      run: |
+        npm install --prefix "$RUNNER_TEMP/browser" playwright@1.58.2
+        "$RUNNER_TEMP/browser/node_modules/.bin/playwright" install --with-deps chromium
+    - name: Browser proposal and network scope tests
+      run: |
+        bin/ovn-light --demo > "$RUNNER_TEMP/demo.log" 2>&1 &
+        server_pid=$!
+        trap 'kill "$server_pid"; cat "$RUNNER_TEMP/demo.log"' EXIT
+        for _attempt in {1..30}; do
+          if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then break; fi
+          sleep 1
+        done
+        PLAYWRIGHT_MODULE="$RUNNER_TEMP/browser/node_modules/playwright" node scripts/browser-smoke.cjs

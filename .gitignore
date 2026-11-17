@@ -28,6 +28,13 @@ go.work.sum
 
 # env file
 .env
+bin/
+.data/
+node_modules/
+__pycache__/
+*.pyc
+ovn-light-snapshot.json
+.artifacts/
 
 # Editor/IDE
 # .idea/

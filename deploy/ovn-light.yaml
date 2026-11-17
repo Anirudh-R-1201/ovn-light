@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ovn-light
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ovn-light
+  namespace: ovn-light
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ovn-light
+rules:
+- apiGroups: [""]
+  resources: [pods, namespaces, nodes, services]
+  verbs: [get, list]
+- apiGroups: [networking.k8s.io]
+  resources: [networkpolicies]
+  verbs: [get, list, create, delete]
+- apiGroups: [k8s.ovn.org]
+  resources: [userdefinednetworks, clusteruserdefinednetworks, egressfirewalls]
+  verbs: [get, list]
+- apiGroups: [k8s.ovn.org]
+  resources: [clusternetworkconnects]
+  verbs: [get, list, create, delete]
+- apiGroups: [k8s.cni.cncf.io]
+  resources: [network-attachment-definitions]
+  verbs: [get, list]
+- apiGroups: [k8s.cni.cncf.io]
+  resources: [multi-networkpolicies]
+  verbs: [get, list, create, delete]
+- apiGroups: [policy.networking.k8s.io]
+  resources: [adminnetworkpolicies, baselineadminnetworkpolicies]
+  verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ovn-light
+subjects:
+- kind: ServiceAccount
+  name: ovn-light
+  namespace: ovn-light
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ovn-light
+---
+# Read-only OVS commands still require a powerful pods/exec permission.
+# Change this namespace to openshift-ovn-kubernetes when deploying on OpenShift.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ovn-light-collector
+  namespace: ovn-kubernetes
+rules:
+- apiGroups: [""]
+  resources: [pods/exec]
+  verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ovn-light-collector
+  namespace: ovn-kubernetes
+subjects:
+- kind: ServiceAccount
+  name: ovn-light
+  namespace: ovn-light
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ovn-light-collector
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ovn-light-data
+  namespace: ovn-light
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ovn-light
+  namespace: ovn-light
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: ovn-light}
+  template:
+    metadata:
+      labels: {app: ovn-light}
+    spec:
+      serviceAccountName: ovn-light
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: ovn-light
+        image: ovn-light:dev
+        imagePullPolicy: IfNotPresent
+        args: ["--listen=:8080", "--enable-writes", "--data-dir=/data", "--interval=30s"]
+        env:
+        - name: OVN_LIGHT_TOKEN
+          valueFrom:
+            secretKeyRef: {name: ovn-light-auth, key: token}
+        ports:
+        - {name: http, containerPort: 8080}
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          initialDelaySeconds: 2
+        livenessProbe:
+          httpGet: {path: /healthz, port: http}
+          initialDelaySeconds: 10
+        resources:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {cpu: "2", memory: 1Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+        - {name: data, mountPath: /data}
+      volumes:
+      - name: data
+        persistentVolumeClaim: {claimName: ovn-light-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ovn-light
+  namespace: ovn-light
+spec:
+  selector: {app: ovn-light}
+  ports:
+  - {name: http, port: 8080, targetPort: http}
+  type: ClusterIP

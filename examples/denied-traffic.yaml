@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ovn-light-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: ovn-light-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: server}
+  template:
+    metadata:
+      labels: {app: server, app.kubernetes.io/part-of: ovn-light-demo}
+    spec:
+      containers:
+      - name: server
+        image: registry.k8s.io/e2e-test-images/agnhost:2.45
+        args: [netexec, "--http-port=8080", "--udp-port=-1"]
+        ports: [{containerPort: 8080, name: http}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: ovn-light-demo
+spec:
+  selector: {app: server}
+  ports: [{port: 8080, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client
+  namespace: ovn-light-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: client}
+  template:
+    metadata:
+      labels: {app: client, app.kubernetes.io/part-of: ovn-light-demo}
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector: {matchLabels: {app: server}}
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: client
+        image: registry.k8s.io/e2e-test-images/agnhost:2.45
+        command: [/bin/sh, -c]
+        args:
+        - |
+          while true; do
+            target="$(getent ahostsv4 server.ovn-light-demo.svc.cluster.local | awk 'NR==1 {print $1}')"
+            [ -n "$target" ] && break
+            sleep 2
+          done
+          while true; do /agnhost connect "$target:8080" --timeout=2s; sleep 2; done
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-server
+  namespace: ovn-light-demo
+spec:
+  podSelector: {matchLabels: {app: server}}
+  policyTypes: [Ingress]
+  ingress: []
+---
+# Allow the optional Verify button to run a TCP probe in this demo namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ovn-light-probe
+  namespace: ovn-light-demo
+rules:
+- apiGroups: [""]
+  resources: [pods/exec]
+  verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ovn-light-probe
+  namespace: ovn-light-demo
+subjects:
+- {kind: ServiceAccount, name: ovn-light, namespace: ovn-light}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: ovn-light-probe}

@@ -1,0 +1,350 @@
+// SPDX-License-Identifier: Apache-2.0
+package app
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/trozet/ovn-light/internal/kube"
+	"github.com/trozet/ovn-light/internal/model"
+	"github.com/trozet/ovn-light/internal/ovn"
+	"github.com/trozet/ovn-light/internal/policy"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+)
+
+type App struct {
+	mu         sync.RWMutex
+	operation  sync.Mutex
+	snapshot   model.Snapshot
+	view       model.View
+	plans      map[string]*policy.Plan
+	Collector  *kube.Collector
+	Client     *kube.Client
+	Mode       string
+	Writes     bool
+	DataDir    string
+	collecting bool
+}
+type diskPlan struct {
+	Plan        policy.Plan `json:"plan"`
+	Fingerprint string      `json:"fingerprint"`
+}
+
+func New(mode, dataDir string, client *kube.Client, collector *kube.Collector, writes bool) (*App, error) {
+	a := &App{Mode: mode, DataDir: dataDir, Client: client, Collector: collector, Writes: writes && mode == "live", plans: map[string]*policy.Plan{}}
+	if dataDir != "" {
+		if err := os.MkdirAll(dataDir, 0700); err != nil {
+			return nil, err
+		}
+		files, err := filepath.Glob(filepath.Join(dataDir, "plan-*.json"))
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range files {
+			b, err := os.ReadFile(file)
+			if err != nil {
+				return nil, err
+			}
+			var saved diskPlan
+			if err = json.Unmarshal(b, &saved); err != nil {
+				return nil, fmt.Errorf("read audit record %s: %w", file, err)
+			}
+			p := saved.Plan
+			p.Fingerprint = saved.Fingerprint
+			if p.Status == "applying" || p.Status == "rolling-back" {
+				p.Status = "interrupted"
+				p.Warnings = append(p.Warnings, "The process stopped during a write. Inspect planned object names in the cluster before retrying; the recorded objects can be rolled back.")
+			}
+			a.plans[p.ID] = &p
+		}
+	}
+	return a, nil
+}
+func (a *App) Load(s model.Snapshot) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var previous *model.Snapshot
+	if a.snapshot.Version != 0 {
+		old := a.snapshot
+		previous = &old
+	}
+	a.snapshot = s
+	a.view = ovn.Analyze(s, previous)
+	a.view.Mode = a.Mode
+	a.view.WritesEnabled = a.Writes
+}
+func (a *App) State() model.View {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	v := a.view
+	v.Mode = a.Mode
+	v.WritesEnabled = a.Writes
+	v.Collecting = a.collecting
+	return v
+}
+func (a *App) Snapshot() model.Snapshot { a.mu.RLock(); defer a.mu.RUnlock(); return a.snapshot }
+func (a *App) Refresh(ctx context.Context) error {
+	if a.Collector == nil {
+		return nil
+	}
+	a.mu.Lock()
+	if a.collecting {
+		a.mu.Unlock()
+		return fmt.Errorf("collection is already running")
+	}
+	a.collecting = true
+	a.mu.Unlock()
+	defer func() { a.mu.Lock(); a.collecting = false; a.mu.Unlock() }()
+	s, err := a.Collector.Capture(ctx)
+	if err != nil {
+		a.mu.Lock()
+		a.view.Errors = append([]string{err.Error()}, a.snapshot.Inventory.Errors...)
+		a.mu.Unlock()
+		return err
+	}
+	a.Load(s)
+	return nil
+}
+func (a *App) Run(ctx context.Context, interval time.Duration) {
+	_ = a.Refresh(ctx)
+	timer := time.NewTicker(interval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			_ = a.Refresh(ctx)
+		}
+	}
+}
+func (a *App) persist(p *policy.Plan) error {
+	if a.DataDir == "" {
+		if a.Writes {
+			return fmt.Errorf("writes require a writable audit directory")
+		}
+		return nil
+	}
+	b, err := json.MarshalIndent(diskPlan{Plan: *p, Fingerprint: p.Fingerprint}, "", "  ")
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(a.DataDir, ".plan-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	if _, err = f.Write(b); err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(name, filepath.Join(a.DataDir, "plan-"+p.ID+".json"))
+}
+func clonePlan(p *policy.Plan) policy.Plan {
+	b, _ := json.Marshal(p)
+	var out policy.Plan
+	_ = json.Unmarshal(b, &out)
+	return out
+}
+func (a *App) Plans() []policy.Plan {
+	a.operation.Lock()
+	defer a.operation.Unlock()
+	out := []policy.Plan{}
+	for _, p := range a.plans {
+		out = append(out, clonePlan(p))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out
+}
+func (a *App) Prepare(ctx context.Context, i policy.Intent) (policy.Plan, error) {
+	a.operation.Lock()
+	defer a.operation.Unlock()
+	if i.FindingID != "" {
+		var finding *model.Finding
+		for _, f := range a.State().Findings {
+			if f.ID == i.FindingID {
+				finding = &f
+				break
+			}
+		}
+		if finding == nil {
+			return policy.Plan{}, fmt.Errorf("drop evidence expired; refresh the issue or start a new connection review")
+		}
+		network := ""
+		for _, e := range []model.Endpoint{finding.Source, finding.Destination} {
+			if e.Network != "" {
+				if network != "" && network != e.Network {
+					return policy.Plan{}, fmt.Errorf("this drop crosses networks; review connectivity separately")
+				}
+				network = e.Network
+			}
+		}
+		if network != "" {
+			for _, e := range []*model.Endpoint{&i.Source, &i.Destination} {
+				if e.Network != "" && e.Network != network {
+					return policy.Plan{}, fmt.Errorf("proposal must stay on the drop's observed network %s", network)
+				}
+				e.Network = network
+			}
+		}
+	}
+	inv := a.Snapshot().Inventory
+	if a.Mode == "live" {
+		var err error
+		inv, err = a.Client.Inventory(ctx)
+		if err != nil {
+			return policy.Plan{}, err
+		}
+	}
+	idBytes := make([]byte, 16)
+	if _, err := rand.Read(idBytes); err != nil {
+		return policy.Plan{}, err
+	}
+	id := hex.EncodeToString(idBytes)
+	p, err := policy.Build(inv, i, id)
+	if err != nil {
+		return p, err
+	}
+	if a.Mode == "live" && a.Writes {
+		for _, o := range p.Objects {
+			if _, err = a.Client.Create(ctx, o, true); err != nil {
+				return p, fmt.Errorf("admission dry-run failed: %w", err)
+			}
+		}
+	} else {
+		p.Warnings = append(p.Warnings, "Export only: this server cannot apply changes; cluster admission has not validated this proposal.")
+	}
+	if err = a.persist(&p); err != nil {
+		return p, err
+	}
+	a.plans[id] = &p
+	return clonePlan(&p), nil
+}
+func (a *App) Apply(ctx context.Context, id string) (policy.Plan, error) {
+	a.operation.Lock()
+	defer a.operation.Unlock()
+	p, ok := a.plans[id]
+	if !ok {
+		return policy.Plan{}, fmt.Errorf("proposal not found")
+	}
+	fail := func(e error) (policy.Plan, error) { return clonePlan(p), e }
+	if !a.Writes {
+		return fail(fmt.Errorf("cluster writes are disabled"))
+	}
+	if p.Status != "review" {
+		return fail(fmt.Errorf("proposal is %s; create a fresh proposal to make another change", p.Status))
+	}
+	if time.Now().After(p.ExpiresAt) {
+		return fail(fmt.Errorf("proposal expired; generate and review a new one"))
+	}
+	inv, err := a.Client.Inventory(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	if len(inv.Errors) > 0 || policy.Fingerprint(inv) != p.Fingerprint {
+		return fail(fmt.Errorf("policies, networks or workload identity changed; generate and review a new proposal"))
+	}
+	for _, o := range p.Objects {
+		if _, err = a.Client.Create(ctx, o, true); err != nil {
+			return fail(fmt.Errorf("admission dry-run failed: %w", err))
+		}
+	}
+	p.Status = "applying"
+	if err = a.persist(p); err != nil {
+		p.Status = "review"
+		return fail(err)
+	}
+	for _, o := range p.Objects {
+		created, e := a.Client.Create(ctx, o, false)
+		if e != nil {
+			p.Status = "apply-failed"
+			p.Warnings = append(p.Warnings, "Create failed; some objects may have been applied. On a transport timeout check all planned object names before retrying. "+e.Error())
+			persistErr := a.persist(p)
+			return fail(errors.Join(e, persistErr))
+		}
+		p.Applied = append(p.Applied, policy.ObjectRef{Kind: created.GetKind(), Namespace: created.GetNamespace(), Name: created.GetName(), UID: string(created.GetUID()), SpecHash: kube.SpecHash(created)})
+		if err = a.persist(p); err != nil {
+			return fail(fmt.Errorf("object was created but its audit record could not be saved: %w", err))
+		}
+	}
+	p.Status = "applied"
+	p.Verification = "Applied; connectivity has not been verified."
+	err = a.persist(p)
+	return clonePlan(p), err
+}
+func (a *App) Rollback(ctx context.Context, id string) (policy.Plan, error) {
+	a.operation.Lock()
+	defer a.operation.Unlock()
+	p, ok := a.plans[id]
+	if !ok {
+		return policy.Plan{}, fmt.Errorf("proposal not found")
+	}
+	if !a.Writes {
+		return clonePlan(p), fmt.Errorf("cluster writes are disabled")
+	}
+	if len(p.Applied) == 0 {
+		return clonePlan(p), fmt.Errorf("no recorded objects to roll back")
+	}
+	p.Status = "rolling-back"
+	if err := a.persist(p); err != nil {
+		return clonePlan(p), err
+	}
+	for len(p.Applied) > 0 {
+		index := len(p.Applied) - 1
+		ref := p.Applied[index]
+		err := a.Client.Rollback(ctx, ref, p.ID)
+		if err != nil && !apierrors.IsNotFound(err) {
+			p.Status = "rollback-failed"
+			_ = a.persist(p)
+			return clonePlan(p), err
+		}
+		p.Applied = p.Applied[:index]
+		if err = a.persist(p); err != nil {
+			return clonePlan(p), err
+		}
+	}
+	p.Status = "rolled-back"
+	p.Verification = "Created resources were removed. Previous policy behavior should return after OVN converges."
+	err := a.persist(p)
+	return clonePlan(p), err
+}
+func (a *App) Verify(ctx context.Context, id string) (policy.Plan, error) {
+	a.operation.Lock()
+	defer a.operation.Unlock()
+	p, ok := a.plans[id]
+	if !ok {
+		return policy.Plan{}, fmt.Errorf("proposal not found")
+	}
+	if !a.Writes || a.Client == nil {
+		return clonePlan(p), fmt.Errorf("active probes require a live server with writes enabled")
+	}
+	if p.Status != "applied" && p.Status != "verified" {
+		return clonePlan(p), fmt.Errorf("apply the proposal before verifying it")
+	}
+	message, err := a.Client.Probe(ctx, p.Intent)
+	if err != nil {
+		p.Status = "applied"
+		p.Verification = "Not verified: " + err.Error()
+	} else {
+		p.Status = "verified"
+		p.Verification = message
+	}
+	saveErr := a.persist(p)
+	return clonePlan(p), errors.Join(err, saveErr)
+}

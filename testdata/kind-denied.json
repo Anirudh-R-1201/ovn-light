@@ -1,0 +1,1150 @@
+{
+  "version": 1,
+  "capturedAt": "2026-11-17T14:39:47.344349243Z",
+  "inventory": {
+    "pods": [
+      {
+        "metadata": {
+          "name": "client-6c84dcf7db-vgfzd",
+          "generateName": "client-6c84dcf7db-",
+          "namespace": "ovn-light-demo",
+          "uid": "5fc3621a-6247-4f90-938c-26dc53e4957e",
+          "resourceVersion": "3801",
+          "generation": 1,
+          "creationTimestamp": "2026-11-17T14:33:40Z",
+          "labels": {
+            "app": "client",
+            "app.kubernetes.io/part-of": "ovn-light-demo",
+            "pod-template-hash": "6c84dcf7db"
+          },
+          "annotations": {
+            "k8s.ovn.org/pod-networks": "{\"default\":{\"ip_addresses\":[\"10.244.1.6/24\"],\"mac_address\":\"0a:58:0a:f4:01:06\",\"gateway_ips\":[\"10.244.1.1\"],\"routes\":[{\"dest\":\"10.244.0.0/16\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"10.96.0.0/16\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"169.254.0.5/32\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"100.64.0.0/16\",\"nextHop\":\"10.244.1.1\"}],\"ip_address\":\"10.244.1.6/24\",\"gateway_ip\":\"10.244.1.1\",\"role\":\"primary\"}}"
+          },
+          "ownerReferences": [
+            {
+              "apiVersion": "apps/v1",
+              "kind": "ReplicaSet",
+              "name": "client-6c84dcf7db",
+              "uid": "a5c649ca-4266-4168-8d68-9e71e66d8a25",
+              "controller": true,
+              "blockOwnerDeletion": true
+            }
+          ]
+        },
+        "spec": {
+          "volumes": [
+            {
+              "name": "kube-api-access-4s95h",
+              "projected": {
+                "sources": [
+                  {
+                    "serviceAccountToken": {
+                      "expirationSeconds": 3607,
+                      "path": "token"
+                    }
+                  },
+                  {
+                    "configMap": {
+                      "name": "kube-root-ca.crt",
+                      "items": [
+                        {
+                          "key": "ca.crt",
+                          "path": "ca.crt"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "downwardAPI": {
+                      "items": [
+                        {
+                          "path": "namespace",
+                          "fieldRef": {
+                            "apiVersion": "v1",
+                            "fieldPath": "metadata.namespace"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "defaultMode": 420
+              }
+            }
+          ],
+          "containers": [
+            {
+              "name": "client",
+              "image": "registry.k8s.io/e2e-test-images/agnhost:2.45",
+              "command": [
+                "/bin/sh",
+                "-c"
+              ],
+              "args": [
+                "while true; do /agnhost connect server.ovn-light-demo.svc.cluster.local:8080 --timeout=2s; sleep 2; done"
+              ],
+              "resources": {},
+              "volumeMounts": [
+                {
+                  "name": "kube-api-access-4s95h",
+                  "readOnly": true,
+                  "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount"
+                }
+              ],
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "imagePullPolicy": "IfNotPresent"
+            }
+          ],
+          "restartPolicy": "Always",
+          "terminationGracePeriodSeconds": 30,
+          "dnsPolicy": "ClusterFirst",
+          "serviceAccountName": "default",
+          "serviceAccount": "default",
+          "nodeName": "ovn-light-worker",
+          "securityContext": {},
+          "affinity": {
+            "podAffinity": {
+              "requiredDuringSchedulingIgnoredDuringExecution": [
+                {
+                  "labelSelector": {
+                    "matchLabels": {
+                      "app": "server"
+                    }
+                  },
+                  "topologyKey": "kubernetes.io/hostname"
+                }
+              ]
+            }
+          },
+          "schedulerName": "default-scheduler",
+          "tolerations": [
+            {
+              "key": "node.kubernetes.io/not-ready",
+              "operator": "Exists",
+              "effect": "NoExecute",
+              "tolerationSeconds": 300
+            },
+            {
+              "key": "node.kubernetes.io/unreachable",
+              "operator": "Exists",
+              "effect": "NoExecute",
+              "tolerationSeconds": 300
+            }
+          ],
+          "priority": 0,
+          "enableServiceLinks": true,
+          "preemptionPolicy": "PreemptLowerPriority"
+        },
+        "status": {
+          "observedGeneration": 1,
+          "phase": "Running",
+          "conditions": [
+            {
+              "type": "PodReadyToStartContainers",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            },
+            {
+              "type": "Initialized",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            },
+            {
+              "type": "Ready",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            },
+            {
+              "type": "ContainersReady",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            },
+            {
+              "type": "PodScheduled",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            }
+          ],
+          "hostIP": "172.18.0.11",
+          "hostIPs": [
+            {
+              "ip": "172.18.0.11"
+            }
+          ],
+          "podIP": "10.244.1.6",
+          "podIPs": [
+            {
+              "ip": "10.244.1.6"
+            }
+          ],
+          "startTime": "2026-11-17T14:36:22Z",
+          "containerStatuses": [
+            {
+              "name": "client",
+              "state": {
+                "running": {
+                  "startedAt": "2026-11-17T14:36:22Z"
+                }
+              },
+              "lastState": {},
+              "ready": true,
+              "restartCount": 0,
+              "image": "registry.k8s.io/e2e-test-images/agnhost:2.45",
+              "imageID": "docker.io/library/import-2026-11-17@sha256:fe2ae622a6a8d5eebb6e75d9109d76de6869daa06e744aaefdad045f65ce166e",
+              "containerID": "containerd://561e675086ddeb26fa221c5c6269ce6e10232cb2c867dbfa29774901f45db5b7",
+              "started": true,
+              "resources": {},
+              "volumeMounts": [
+                {
+                  "name": "kube-api-access-4s95h",
+                  "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                  "readOnly": true,
+                  "recursiveReadOnly": "Disabled"
+                }
+              ],
+              "user": {
+                "linux": {
+                  "uid": 0,
+                  "gid": 0,
+                  "supplementalGroups": [
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    6,
+                    10,
+                    11,
+                    20,
+                    26,
+                    27
+                  ]
+                }
+              }
+            }
+          ],
+          "qosClass": "BestEffort",
+          "resources": {}
+        }
+      },
+      {
+        "metadata": {
+          "name": "server-544658cd78-jdx6g",
+          "generateName": "server-544658cd78-",
+          "namespace": "ovn-light-demo",
+          "uid": "72223a0c-cd59-471d-b5b7-598100aa55d7",
+          "resourceVersion": "3804",
+          "generation": 1,
+          "creationTimestamp": "2026-11-17T14:33:40Z",
+          "labels": {
+            "app": "server",
+            "app.kubernetes.io/part-of": "ovn-light-demo",
+            "pod-template-hash": "544658cd78"
+          },
+          "annotations": {
+            "k8s.ovn.org/pod-networks": "{\"default\":{\"ip_addresses\":[\"10.244.1.7/24\"],\"mac_address\":\"0a:58:0a:f4:01:07\",\"gateway_ips\":[\"10.244.1.1\"],\"routes\":[{\"dest\":\"10.244.0.0/16\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"10.96.0.0/16\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"169.254.0.5/32\",\"nextHop\":\"10.244.1.1\"},{\"dest\":\"100.64.0.0/16\",\"nextHop\":\"10.244.1.1\"}],\"ip_address\":\"10.244.1.7/24\",\"gateway_ip\":\"10.244.1.1\",\"role\":\"primary\"}}"
+          },
+          "ownerReferences": [
+            {
+              "apiVersion": "apps/v1",
+              "kind": "ReplicaSet",
+              "name": "server-544658cd78",
+              "uid": "d56ce302-0e62-4bfc-9165-213c3b2f4fb0",
+              "controller": true,
+              "blockOwnerDeletion": true
+            }
+          ]
+        },
+        "spec": {
+          "volumes": [
+            {
+              "name": "kube-api-access-q5gsx",
+              "projected": {
+                "sources": [
+                  {
+                    "serviceAccountToken": {
+                      "expirationSeconds": 3607,
+                      "path": "token"
+                    }
+                  },
+                  {
+                    "configMap": {
+                      "name": "kube-root-ca.crt",
+                      "items": [
+                        {
+                          "key": "ca.crt",
+                          "path": "ca.crt"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "downwardAPI": {
+                      "items": [
+                        {
+                          "path": "namespace",
+                          "fieldRef": {
+                            "apiVersion": "v1",
+                            "fieldPath": "metadata.namespace"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "defaultMode": 420
+              }
+            }
+          ],
+          "containers": [
+            {
+              "name": "server",
+              "image": "registry.k8s.io/e2e-test-images/agnhost:2.45",
+              "args": [
+                "netexec",
+                "--http-port=8080",
+                "--udp-port=-1"
+              ],
+              "ports": [
+                {
+                  "name": "http",
+                  "containerPort": 8080,
+                  "protocol": "TCP"
+                }
+              ],
+              "resources": {},
+              "volumeMounts": [
+                {
+                  "name": "kube-api-access-q5gsx",
+                  "readOnly": true,
+                  "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount"
+                }
+              ],
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "imagePullPolicy": "IfNotPresent"
+            }
+          ],
+          "restartPolicy": "Always",
+          "terminationGracePeriodSeconds": 30,
+          "dnsPolicy": "ClusterFirst",
+          "serviceAccountName": "default",
+          "serviceAccount": "default",
+          "nodeName": "ovn-light-worker",
+          "securityContext": {},
+          "schedulerName": "default-scheduler",
+          "tolerations": [
+            {
+              "key": "node.kubernetes.io/not-ready",
+              "operator": "Exists",
+              "effect": "NoExecute",
+              "tolerationSeconds": 300
+            },
+            {
+              "key": "node.kubernetes.io/unreachable",
+              "operator": "Exists",
+              "effect": "NoExecute",
+              "tolerationSeconds": 300
+            }
+          ],
+          "priority": 0,
+          "enableServiceLinks": true,
+          "preemptionPolicy": "PreemptLowerPriority"
+        },
+        "status": {
+          "observedGeneration": 1,
+          "phase": "Running",
+          "conditions": [
+            {
+              "type": "PodReadyToStartContainers",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            },
+            {
+              "type": "Initialized",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            },
+            {
+              "type": "Ready",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            },
+            {
+              "type": "ContainersReady",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            },
+            {
+              "type": "PodScheduled",
+              "observedGeneration": 1,
+              "status": "True",
+              "lastProbeTime": null,
+              "lastTransitionTime": "2026-11-17T14:36:22Z"
+            }
+          ],
+          "hostIP": "172.18.0.11",
+          "hostIPs": [
+            {
+              "ip": "172.18.0.11"
+            }
+          ],
+          "podIP": "10.244.1.7",
+          "podIPs": [
+            {
+              "ip": "10.244.1.7"
+            }
+          ],
+          "startTime": "2026-11-17T14:36:22Z",
+          "containerStatuses": [
+            {
+              "name": "server",
+              "state": {
+                "running": {
+                  "startedAt": "2026-11-17T14:36:22Z"
+                }
+              },
+              "lastState": {},
+              "ready": true,
+              "restartCount": 0,
+              "image": "registry.k8s.io/e2e-test-images/agnhost:2.45",
+              "imageID": "docker.io/library/import-2026-11-17@sha256:fe2ae622a6a8d5eebb6e75d9109d76de6869daa06e744aaefdad045f65ce166e",
+              "containerID": "containerd://cc249ea3efde89a48bcefc1779b204a3cc4b6b571f744a3315c4ac76ee904824",
+              "started": true,
+              "resources": {},
+              "volumeMounts": [
+                {
+                  "name": "kube-api-access-q5gsx",
+                  "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                  "readOnly": true,
+                  "recursiveReadOnly": "Disabled"
+                }
+              ],
+              "user": {
+                "linux": {
+                  "uid": 0,
+                  "gid": 0,
+                  "supplementalGroups": [
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    6,
+                    10,
+                    11,
+                    20,
+                    26,
+                    27
+                  ]
+                }
+              }
+            }
+          ],
+          "qosClass": "BestEffort",
+          "resources": {}
+        }
+      }
+    ],
+    "namespaces": [
+      {
+        "metadata": {
+          "name": "ovn-light-demo",
+          "uid": "b2cae123-7f7f-42ff-9a6a-65a0a42f7ca5",
+          "resourceVersion": "3381",
+          "creationTimestamp": "2026-11-17T14:33:40Z",
+          "labels": {
+            "kubernetes.io/metadata.name": "ovn-light-demo"
+          },
+          "annotations": {}
+        },
+        "spec": {
+          "finalizers": [
+            "kubernetes"
+          ]
+        },
+        "status": {
+          "phase": "Active"
+        }
+      }
+    ],
+    "policies": [
+      {
+        "metadata": {
+          "name": "isolate-server",
+          "namespace": "ovn-light-demo",
+          "uid": "e56cd9d7-a026-4b94-8927-4171771914db",
+          "resourceVersion": "3402",
+          "generation": 1,
+          "creationTimestamp": "2026-11-17T14:33:40Z",
+          "annotations": {}
+        },
+        "spec": {
+          "podSelector": {
+            "matchLabels": {
+              "app": "server"
+            }
+          },
+          "policyTypes": [
+            "Ingress"
+          ]
+        }
+      }
+    ],
+    "services": [
+      {
+        "metadata": {
+          "name": "server",
+          "namespace": "ovn-light-demo",
+          "uid": "f7cc4188-a2aa-46a2-b831-ce49241e69c4",
+          "resourceVersion": "3393",
+          "creationTimestamp": "2026-11-17T14:33:40Z",
+          "annotations": {}
+        },
+        "spec": {
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 8080,
+              "targetPort": "http"
+            }
+          ],
+          "selector": {
+            "app": "server"
+          },
+          "clusterIP": "10.96.120.148",
+          "clusterIPs": [
+            "10.96.120.148"
+          ],
+          "type": "ClusterIP",
+          "sessionAffinity": "None",
+          "ipFamilies": [
+            "IPv4"
+          ],
+          "ipFamilyPolicy": "SingleStack",
+          "internalTrafficPolicy": "Cluster"
+        },
+        "status": {
+          "loadBalancer": {}
+        }
+      }
+    ],
+    "resources": {}
+  },
+  "nodes": [
+    {
+      "name": "ovn-light-worker",
+      "capturedAt": "2026-11-17T14:39:47.364898154Z",
+      "datapath": "system@ovs-system:",
+      "flows": "ufid:bebc931d-49f7-4615-9111-ec520b047e38, recirc_id(0),dp_hash(0/0),skb_priority(0/0),in_port(683ad8ca60ff050),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),eth(src=0a:58:0a:f4:01:06,dst=0a:58:0a:f4:01:07),eth_type(0x0800),ipv4(src=10.244.1.6,dst=10.128.0.0/255.128.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:1, bytes:74, used:3.794s, flags:S, dp:ovs, actions:ct(zone=22,nat),recirc(0xa8)\nufid:318227f9-3ef9-417c-bfbd-cb9be413cb9c, recirc_id(0xa9),dp_hash(0/0),skb_priority(0/0),in_port(683ad8ca60ff050),skb_mark(0/0),ct_state(0x21/0x3f),ct_zone(0/0),ct_mark(0/0x41),ct_label(0/0),eth(src=0a:58:0a:f4:01:06,dst=0a:58:00:00:00:00/ff:ff:00:00:00:00),eth_type(0x0800),ipv4(src=10.244.1.4/255.255.255.252,dst=0.0.0.0/0.0.0.0,proto=0/0,tos=0/0,ttl=0/0,frag=no), packets:1, bytes:74, used:3.795s, flags:S, dp:ovs, actions:drop\nufid:72ea1d97-a2cd-4706-b241-b0a2e2cdf6ef, recirc_id(0xa8),dp_hash(0/0),skb_priority(0/0),in_port(683ad8ca60ff050),skb_mark(0),ct_state(0x21/0x3f),ct_zone(0/0),ct_mark(0/0x4f),ct_label(0/0),ct_tuple4(src=0.0.0.0/0.0.0.0,dst=0.0.0.0/0.0.0.0,proto=6,tp_src=0/0,tp_dst=8080),eth(src=0a:58:0a:f4:01:06,dst=0a:58:0a:f4:01:07),eth_type(0x0800),ipv4(src=0.0.0.0/128.0.0.0,dst=10.128.0.0/255.128.0.0,proto=6,tos=0/0,ttl=0/0,frag=no),tcp(src=0/0,dst=0/0),tcp_flags(0/0), packets:1, bytes:74, used:3.795s, flags:S, dp:ovs, actions:ct(commit,zone=22,mark=0/0x41,label=0/0xffff00000000000000000000,nat(src)),ct(zone=24,nat),recirc(0xa9)",
+      "ports": "system@ovs-system:\n  lookups: hit:41261 missed:622 lost:0\n  flows: 88\n  masks: hit:382097 total:32 hit/pkt:9.12\n  cache: hit:16941 hit-rate:40.45%\n  caches:\n    masks-cache: size:256\n  port 0: ovs-system (internal)\n  port 1: br-int (internal)\n  port 2: eth0\n  port 3: breth0 (internal)\n  port 4: genev_sys_6081 (geneve: packet_type=ptap)\n  port 5: ovn-k8s-mp0 (internal)\n  port 6: e599402d5fca352\n  port 7: 21862fd37b7c9cb\n  port 8: 683ad8ca60ff050\n  port 9: 185acc5e075b731\n  port 10: 9fa82eb1247fbb0\n  port 11: 6f44910719804d6\n",
+      "interfaces": [
+        {
+          "external_ids": {
+            "attached_mac": "0a:58:0a:f4:01:07",
+            "iface-id": "ovn-light-demo_server-544658cd78-jdx6g",
+            "iface-id-ver": "72223a0c-cd59-471d-b5b7-598100aa55d7",
+            "ip_addresses": "10.244.1.7/24",
+            "ovn-installed": "true",
+            "ovn-installed-ts": "1794926182537",
+            "pod-if-name": "eth0",
+            "sandbox": "9fa82eb1247fbb0345550bac9d76d2901c00497eaf36cc46c3595d63bb32edaf"
+          },
+          "name": "9fa82eb1247fbb0",
+          "ofport": 8
+        },
+        {
+          "external_ids": {
+            "attached_mac": "0a:58:0a:f4:01:06",
+            "iface-id": "ovn-light-demo_client-6c84dcf7db-vgfzd",
+            "iface-id-ver": "5fc3621a-6247-4f90-938c-26dc53e4957e",
+            "ip_addresses": "10.244.1.6/24",
+            "ovn-installed": "true",
+            "ovn-installed-ts": "1794926182532",
+            "pod-if-name": "eth0",
+            "sandbox": "683ad8ca60ff050547651ee67ac7db02d72b3a6b8e1940b880284cd92a44272d"
+          },
+          "name": "683ad8ca60ff050",
+          "ofport": 6
+        }
+      ],
+      "bindings": [
+        {
+          "_uuid": "32718e36-37f7-4b49-acbe-deb6a774b867",
+          "datapath": "c385613e-28fe-409d-8b64-3fd9c3163718",
+          "logical_port": "ovn-light-demo_client-6c84dcf7db-vgfzd",
+          "options": {
+            "iface-id-ver": "5fc3621a-6247-4f90-938c-26dc53e4957e",
+            "requested-chassis": "4b8c359d-94a0-4b6b-8a00-5a26bb2ccc0d"
+          },
+          "tunnel_key": 4,
+          "type": ""
+        },
+        {
+          "_uuid": "721da1e7-cb7a-43fd-b50c-b428c9388171",
+          "datapath": "c385613e-28fe-409d-8b64-3fd9c3163718",
+          "logical_port": "ovn-light-demo_server-544658cd78-jdx6g",
+          "options": {
+            "iface-id-ver": "72223a0c-cd59-471d-b5b7-598100aa55d7",
+            "requested-chassis": "4b8c359d-94a0-4b6b-8a00-5a26bb2ccc0d"
+          },
+          "tunnel_key": 8,
+          "type": ""
+        }
+      ],
+      "datapaths": [
+        {
+          "_uuid": "19c781bd-10bf-44c8-a176-f72664a3f7aa",
+          "external_ids": {
+            "always_learn_from_arp_request": "false",
+            "disable_garp_rarp": "false",
+            "logical-router": "e968826b-b19a-4e3b-91c4-68ca379f9245",
+            "name": "ovn_cluster_router"
+          },
+          "tunnel_key": 1
+        },
+        {
+          "_uuid": "026942d1-de8b-4ff3-9ef9-a67a3fa6319e",
+          "external_ids": {
+            "interconn-ts": "transit_switch",
+            "logical-switch": "0e830593-043c-449c-afcb-283f25e9caef",
+            "name": "transit_switch"
+          },
+          "tunnel_key": 16711683
+        },
+        {
+          "_uuid": "35e382fd-74fe-4994-bb3a-018361b1d4a0",
+          "external_ids": {
+            "logical-switch": "8f0d03c9-b640-4953-8af7-3a0c8f1782e3",
+            "name": "ext_ovn-light-worker"
+          },
+          "tunnel_key": 4
+        },
+        {
+          "_uuid": "c385613e-28fe-409d-8b64-3fd9c3163718",
+          "external_ids": {
+            "logical-switch": "acc83eb1-752e-418e-a6aa-1d55459a41d1",
+            "name": "ovn-light-worker"
+          },
+          "tunnel_key": 3
+        },
+        {
+          "_uuid": "7347fd72-fd0c-4761-bd67-d1e6280f8d82",
+          "external_ids": {
+            "always_learn_from_arp_request": "false",
+            "disable_garp_rarp": "false",
+            "logical-router": "90bf2360-5451-4cae-abee-3041da0d961c",
+            "mac_binding_age_threshold": "300",
+            "name": "GR_ovn-light-worker",
+            "snat-ct-zone": "0"
+          },
+          "tunnel_key": 5
+        },
+        {
+          "_uuid": "96907e1f-d44f-46d7-a53b-dc89ba480f2a",
+          "external_ids": {
+            "logical-switch": "1adced03-2b57-46c8-80c4-2a012f5adcd7",
+            "name": "join"
+          },
+          "tunnel_key": 2
+        }
+      ],
+      "logicalFlows": [
+        {
+          "_uuid": "f1a3f80f-ed6f-47fc-82ce-bce3e780e480",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:5698",
+            "stage-name": "ls_out_put_fdb"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "b820e61c-fe25-45eb-aeb6-9ff60bbfa15b",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:5689",
+            "stage-name": "ls_in_lookup_fdb"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "92ba781f-7a22-4888-824e-02949b076d92",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:10005",
+            "stage-name": "ls_in_dns_lookup"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "293b8e23-31c1-444c-95ce-588af4d64027",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:8082",
+            "stage-name": "ls_in_lb_aff_learn"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "6b84ac3c-4b52-4a85-a0a5-749cc974619e",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:8269",
+            "stage-name": "ls_in_nat_hairpin"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "9b79603c-1b5b-43f6-80f3-243e3adaa739",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:7314",
+            "stage-name": "ls_in_acl_after_lb_eval"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "81663e5b-aa15-4e10-9fec-e4ff745b3556",
+          "actions": "ct_commit { ct_mark.blocked = 0; ct_mark.allow_established = reg0[20]; ct_label.acl_id = reg2[16..31]; }; next;",
+          "external_ids": {
+            "source": "northd.c:8245",
+            "stage-name": "ls_in_stateful"
+          },
+          "match": "reg0[1] == 1 && reg0[13] == 0"
+        },
+        {
+          "_uuid": "dfae8874-35a0-4ce1-b6fb-58debc32868b",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:6807",
+            "stage-name": "ls_in_acl_sample"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "03c6787f-4e20-41a7-906a-203185270c40",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:7362",
+            "stage-name": "ls_out_acl_eval"
+          },
+          "match": "ip && !ct.est"
+        },
+        {
+          "_uuid": "467e9c8b-ad42-4ba0-a409-40067437f429",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:5696",
+            "stage-name": "ls_out_lookup_fdb"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "618bb496-13f9-4816-8258-0f16a17c91cf",
+          "actions": "reg1[16..23] = ct_proto(); reg1[0..15] = ct_tp_dst(); next;",
+          "external_ids": {
+            "source": "northd.c:17922",
+            "stage-name": "ls_in_ct_extract"
+          },
+          "match": "ct.new && ip"
+        },
+        {
+          "_uuid": "a74034a0-7d34-4cc7-9eaf-651c5567cbf9",
+          "actions": "reg0[6] = chk_lb_hairpin(); reg0[12] = chk_lb_hairpin_reply(); next;",
+          "external_ids": {
+            "source": "northd.c:8305",
+            "stage-hint": "acc83eb1",
+            "stage-name": "ls_in_pre_hairpin"
+          },
+          "match": "ip && ct.trk"
+        },
+        {
+          "_uuid": "978216a5-2bee-4e45-a85b-8f2c928061d0",
+          "actions": "reg8[30..31] = 2; next(pipeline=egress,table=6);",
+          "external_ids": {
+            "source": "northd.c:7190",
+            "stage-name": "ls_out_acl_action"
+          },
+          "match": "reg8[30..31] == 1"
+        },
+        {
+          "_uuid": "74b786b6-bf2c-4b28-80e2-7e91425a3402",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:8271",
+            "stage-name": "ls_in_hairpin"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "dbdaaab6-af9a-476d-ac1c-fd8033e51aa1",
+          "actions": "reg0[7] = 1; reg0[9] = 1; reg0[1] = 1; next;",
+          "external_ids": {
+            "source": "northd.c:6231",
+            "stage-name": "ls_out_acl_hint"
+          },
+          "match": "ct.new && !ct.est"
+        },
+        {
+          "_uuid": "da4880c0-2058-4b72-bde2-bf54ae2bc548",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:10007",
+            "stage-name": "ls_in_dns_response"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "fe5598e3-b69b-4691-8d6a-9644e2aea61e",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:6811",
+            "stage-name": "ls_in_acl_after_lb_sample"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "839552ec-b446-405d-aaad-1eaf1d854abe",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:10009",
+            "stage-name": "ls_in_external_port"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "5ef8a8f3-68ae-4c50-86e1-803fc3cf9b8e",
+          "actions": "reg0[0] = 1; next;",
+          "external_ids": {
+            "source": "northd.c:5915",
+            "stage-name": "ls_in_pre_acl"
+          },
+          "match": "ip"
+        },
+        {
+          "_uuid": "65900d00-fe34-4601-844d-3b190355bbc2",
+          "actions": "ct_lb_mark;",
+          "external_ids": {
+            "source": "northd.c:6162",
+            "stage-name": "ls_in_pre_stateful"
+          },
+          "match": "reg0[2] == 1"
+        },
+        {
+          "_uuid": "c9a3a50d-1a8e-415d-864b-f2337b68f4c6",
+          "actions": "reg8[16] = 0; reg8[17] = 0; reg8[18] = 0; reg8[30..31] = 0; next;",
+          "external_ids": {
+            "source": "northd.c:7179",
+            "stage-name": "ls_in_acl_after_lb_action"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "584ec513-1060-4666-ae99-2b3baea98bfb",
+          "actions": "ct_lb_mark;",
+          "external_ids": {
+            "source": "northd.c:6166",
+            "stage-name": "ls_out_pre_stateful"
+          },
+          "match": "reg0[2] == 1"
+        },
+        {
+          "_uuid": "82813315-4c9b-4099-b108-160ff68a96c1",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:6809",
+            "stage-name": "ls_out_acl_sample"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "86b3ed2b-ba29-489e-96ba-dfa9c4f75225",
+          "actions": "reg0[7] = 1; reg0[9] = 1; reg0[1] = 1; next;",
+          "external_ids": {
+            "source": "northd.c:6231",
+            "stage-name": "ls_in_acl_hint"
+          },
+          "match": "ct.new && !ct.est"
+        },
+        {
+          "_uuid": "8db7bf2e-3d6d-4c4e-bd72-0fcc05274263",
+          "actions": "outport = \"ovn-light-demo_server-544658cd78-jdx6g\"; output;",
+          "external_ids": {
+            "source": "northd.c:10375",
+            "stage-hint": "610ac171",
+            "stage-name": "ls_in_l2_lkup"
+          },
+          "match": "eth.dst == 0a:58:0a:f4:01:07"
+        },
+        {
+          "_uuid": "dbf8a331-b7a4-4fad-8600-5db23ffae7ff",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:10003",
+            "stage-name": "ls_in_dhcp_response"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "e2c70b68-440f-416e-b961-cc1553fcdd79",
+          "actions": "reg8[30..31] = 1; next(pipeline=ingress,table=20);",
+          "external_ids": {
+            "source": "northd.c:7190",
+            "stage-name": "ls_in_acl_after_lb_action"
+          },
+          "match": "reg8[30..31] == 0"
+        },
+        {
+          "_uuid": "89e9d969-cb29-4373-8a95-c490761b1c08",
+          "actions": "reg0[2] = 1; next;",
+          "external_ids": {
+            "source": "northd.c:6132",
+            "stage-name": "ls_in_pre_lb"
+          },
+          "match": "ip"
+        },
+        {
+          "_uuid": "816dcd75-7f4c-465f-9189-612b87de5485",
+          "actions": "reg8[30..31] = 1; next(pipeline=egress,table=6);",
+          "external_ids": {
+            "source": "northd.c:7190",
+            "stage-name": "ls_out_acl_action"
+          },
+          "match": "reg8[30..31] == 0"
+        },
+        {
+          "_uuid": "f7ae8b78-d1e3-4e45-9c4f-2824c4abae49",
+          "actions": "reg8[16] = 0; reg8[17] = 0; reg8[18] = 0; next;",
+          "external_ids": {
+            "source": "northd.c:7179",
+            "stage-name": "ls_in_acl_action"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "7d31a986-b05b-4edd-8983-b3f1bf728162",
+          "actions": "reg8[17] = 1; next;",
+          "external_ids": {
+            "source": "northd.c:6988",
+            "stage-hint": "25263805",
+            "stage-name": "ls_out_acl_eval"
+          },
+          "match": "reg8[30..31] == 2 && reg0[9] == 1 && (outport == @a4371955403826678838)"
+        },
+        {
+          "_uuid": "4851d988-fab0-4e6b-a126-180f40f399d4",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:9398",
+            "stage-name": "ls_in_apply_port_sec"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "5ccfc59a-bbdf-4ecc-a7e4-95aefcbc8319",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:10001",
+            "stage-name": "ls_in_dhcp_options"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "43b3cba4-0f5c-4537-b690-2cd6ca2b07bb",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:7360",
+            "stage-name": "ls_in_acl_eval"
+          },
+          "match": "ip && !ct.est"
+        },
+        {
+          "_uuid": "e730bfae-b9a7-4906-b92e-343ad60b0516",
+          "actions": "reg8[16] = 0; reg8[17] = 0; reg8[18] = 0; reg8[30..31] = 0; /* drop */",
+          "external_ids": {
+            "source": "northd.c:7163",
+            "stage-name": "ls_out_acl_action"
+          },
+          "match": "reg8[17] == 1"
+        },
+        {
+          "_uuid": "a19109b2-b7be-44a3-a0d3-189a9036da84",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:5410",
+            "stage-name": "ls_in_mirror"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "3f690dbf-acbf-4fbc-bfbc-10a2cb8a2ff7",
+          "actions": "reg0[15] = check_in_port_sec(); next;",
+          "external_ids": {
+            "source": "northd.c:9389",
+            "stage-name": "ls_in_check_port_sec"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "b8aef7c3-9a89-4942-afbf-64c55d1e463e",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:7576",
+            "stage-name": "ls_in_qos"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "fc3fdbc5-4f8d-4177-b26c-3225a5914875",
+          "actions": "reg0[2] = 1; next;",
+          "external_ids": {
+            "source": "northd.c:6135",
+            "stage-name": "ls_out_pre_lb"
+          },
+          "match": "ip"
+        },
+        {
+          "_uuid": "964345ca-3db4-4cea-868c-d7e59d893404",
+          "actions": "reg8[30..31] = 2; next(pipeline=ingress,table=20);",
+          "external_ids": {
+            "source": "northd.c:7190",
+            "stage-name": "ls_in_acl_after_lb_action"
+          },
+          "match": "reg8[30..31] == 1"
+        },
+        {
+          "_uuid": "1115adce-f1c9-415c-a31b-ff79046c7ba6",
+          "actions": "reg0[0] = 1; next;",
+          "external_ids": {
+            "source": "northd.c:5918",
+            "stage-name": "ls_out_pre_acl"
+          },
+          "match": "ip"
+        },
+        {
+          "_uuid": "545d5dd1-ecf4-4edb-89fc-c645676c1718",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:8202",
+            "stage-name": "ls_in_lb"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "c16beddc-6799-4ef9-9f84-de0d1677d414",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:5691",
+            "stage-name": "ls_in_put_fdb"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "fe5f41dc-d665-4d13-b26d-11bdcbed2e5b",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:9842",
+            "stage-name": "ls_in_arp_rsp"
+          },
+          "match": "1"
+        },
+        {
+          "_uuid": "8c7d3fe3-722d-4d61-91ce-d617d58a524a",
+          "actions": "next;",
+          "external_ids": {
+            "source": "northd.c:8080",
+            "stage-name": "ls_in_lb_aff_check"
+          },
+          "match": "1"
+        }
+      ],
+      "acls": [
+        {
+          "_uuid": "f6d7198b-1893-473e-b30d-389f26302ce1",
+          "action": "allow",
+          "direction": "to-lport",
+          "external_ids": {
+            "direction": "Ingress",
+            "k8s.ovn.org/id": "default-network-controller:NetpolNamespace:ovn-light-demo:Ingress:arpAllow",
+            "k8s.ovn.org/name": "ovn-light-demo",
+            "k8s.ovn.org/owner-controller": "default-network-controller",
+            "k8s.ovn.org/owner-type": "NetpolNamespace",
+            "type": "arpAllow"
+          },
+          "match": "outport == @a4371955403826678838 && (arp || nd)",
+          "priority": 1001
+        },
+        {
+          "_uuid": "3865f6cb-c962-4713-8aad-52625f92b542",
+          "action": "drop",
+          "direction": "from-lport",
+          "external_ids": {
+            "direction": "Egress",
+            "k8s.ovn.org/id": "default-network-controller:NetpolNamespace:ovn-light-demo:Egress:defaultDeny",
+            "k8s.ovn.org/name": "ovn-light-demo",
+            "k8s.ovn.org/owner-controller": "default-network-controller",
+            "k8s.ovn.org/owner-type": "NetpolNamespace",
+            "type": "defaultDeny"
+          },
+          "match": "inport == @a1172971055357491148",
+          "priority": 1000
+        },
+        {
+          "_uuid": "25263805-931b-40c2-8a5c-2b5e1d3969cd",
+          "action": "drop",
+          "direction": "to-lport",
+          "external_ids": {
+            "direction": "Ingress",
+            "k8s.ovn.org/id": "default-network-controller:NetpolNamespace:ovn-light-demo:Ingress:defaultDeny",
+            "k8s.ovn.org/name": "ovn-light-demo",
+            "k8s.ovn.org/owner-controller": "default-network-controller",
+            "k8s.ovn.org/owner-type": "NetpolNamespace",
+            "type": "defaultDeny"
+          },
+          "match": "outport == @a4371955403826678838",
+          "priority": 1000
+        },
+        {
+          "_uuid": "bc49144f-1dfc-4cd3-a337-b434284baefa",
+          "action": "allow",
+          "direction": "from-lport",
+          "external_ids": {
+            "direction": "Egress",
+            "k8s.ovn.org/id": "default-network-controller:NetpolNamespace:ovn-light-demo:Egress:arpAllow",
+            "k8s.ovn.org/name": "ovn-light-demo",
+            "k8s.ovn.org/owner-controller": "default-network-controller",
+            "k8s.ovn.org/owner-type": "NetpolNamespace",
+            "type": "arpAllow"
+          },
+          "match": "inport == @a1172971055357491148 && (arp || nd)",
+          "priority": 1001
+        }
+      ],
+      "detraces": {
+        "318227f9-3ef9-417c-bfbd-cb9be413cb9c": "cookie=0xdbdaaab6, table_id=52, duration=215s, n_packets=1484, n_bytes=180565, n_offload_packets=0, n_offload_bytes=0, priority=7,ct_state=+new-est+trk,metadata=0x3,actions=set_field:0x80000000000000000000000000/0x80000000000000000000000000->xxreg0,set_field:0x200000000000000000000000000/0x200000000000000000000000000->xxreg0,set_field:0x2000000000000000000000000/0x2000000000000000000000000->xxreg0,resubmit(,53)\ncookie=0x3c6787f, table_id=53, duration=215s, n_packets=4364, n_bytes=535183, n_offload_packets=0, n_offload_bytes=0, priority=1,ct_state=-est+trk,ip,metadata=0x3,actions=resubmit(,54)\ncookie=0x82813315, table_id=54, duration=215s, n_packets=22186, n_bytes=4312489, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,55)\ncookie=0x816dcd75, table_id=55, duration=215s, n_packets=6111, n_bytes=797418, n_offload_packets=0, n_offload_bytes=0, priority=500,reg8=0/0xc0000000,metadata=0x3,actions=set_field:0x4000000000000000/0xc000000000000000->xreg4,resubmit(,53)\ncookie=0x3c6787f, table_id=53, duration=215s, n_packets=4364, n_bytes=535183, n_offload_packets=0, n_offload_bytes=0, priority=1,ct_state=-est+trk,ip,metadata=0x3,actions=resubmit(,54)\ncookie=0x82813315, table_id=54, duration=215s, n_packets=22186, n_bytes=4312489, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,55)\ncookie=0x978216a5, table_id=55, duration=215s, n_packets=6111, n_bytes=797418, n_offload_packets=0, n_offload_bytes=0, priority=500,reg8=0x40000000/0xc0000000,metadata=0x3,actions=set_field:0x8000000000000000/0xc000000000000000->xreg4,resubmit(,53)\ncookie=0x7d31a986, table_id=53, duration=205s, n_packets=2, n_bytes=148, n_offload_packets=0, n_offload_bytes=0, priority=2000,reg0=0x200/0x200,reg8=0x80000000/0xc0000000,reg15=0x8,metadata=0x3,actions=set_field:0x2000000000000/0x2000000000000->xreg4,resubmit(,54)\ncookie=0x82813315, table_id=54, duration=215s, n_packets=22186, n_bytes=4312489, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,55)\ncookie=0xe730bfae, table_id=55, duration=215s, n_packets=2, n_bytes=148, n_offload_packets=0, n_offload_bytes=0, priority=1000,reg8=0x20000/0x20000,metadata=0x3,actions=set_field:0/0x1000000000000->xreg4,set_field:0/0x2000000000000->xreg4,set_field:0/0x4000000000000->xreg4,set_field:0/0xc000000000000000->xreg4\n",
+        "72ea1d97-a2cd-4706-b241-b0a2e2cdf6ef": "cookie=0x86b3ed2b, table_id=16, duration=215s, n_packets=1970, n_bytes=220789, n_offload_packets=0, n_offload_bytes=0, priority=7,ct_state=+new-est+trk,metadata=0x3,actions=set_field:0x80000000000000000000000000/0x80000000000000000000000000->xxreg0,set_field:0x200000000000000000000000000/0x200000000000000000000000000->xxreg0,set_field:0x2000000000000000000000000/0x2000000000000000000000000->xxreg0,resubmit(,17)\ncookie=0x43b3cba4, table_id=17, duration=215s, n_packets=1970, n_bytes=220789, n_offload_packets=0, n_offload_bytes=0, priority=1,ct_state=-est+trk,ip,metadata=0x3,actions=resubmit(,18)\ncookie=0xdfae8874, table_id=18, duration=215s, n_packets=11355, n_bytes=2899758, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,19)\ncookie=0xf7ae8b78, table_id=19, duration=215s, n_packets=9484, n_bytes=2556531, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=set_field:0/0x1000000000000->xreg4,set_field:0/0x2000000000000->xreg4,set_field:0/0x4000000000000->xreg4,resubmit(,20)\ncookie=0xb8aef7c3, table_id=20, duration=215s, n_packets=11355, n_bytes=2899758, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,21)\ncookie=0x618bb496, table_id=21, duration=215s, n_packets=1970, n_bytes=220789, n_offload_packets=0, n_offload_bytes=0, priority=100,ct_state=+new+trk,ip,metadata=0x3,actions=push:NXM_NX_XXREG1[0..7],set_field:0/0xff->xxreg1,resubmit(,86),move:NXM_NX_XXREG1[0..7]->NXM_NX_XXREG0[80..87],pop:NXM_NX_XXREG1[0..7],push:NXM_NX_XXREG1[0..15],set_field:0/0xffff->xxreg1,resubmit(,83),move:NXM_NX_XXREG1[0..15]->NXM_NX_XXREG0[64..79],pop:NXM_NX_XXREG1[0..15],resubmit(,22)\ntable_id=86, duration=253s, n_packets=1970, n_bytes=220789, n_offload_packets=0, n_offload_bytes=0, priority=100,ct_state=+new+trk,actions=move:NXM_NX_CT_NW_PROTO[]->NXM_NX_XXREG1[0..7],move:NXM_NX_CT_NW_PROTO[]->NXM_NX_XXREG1[0..7]\ntable_id=83, duration=253s, n_packets=1970, n_bytes=220789, n_offload_packets=0, n_offload_bytes=0, priority=100,ct_state=+new+trk,actions=move:NXM_NX_CT_TP_DST[]->NXM_NX_XXREG1[0..15],move:NXM_NX_CT_TP_DST[]->NXM_NX_XXREG1[0..15]\ncookie=0x8c7d3fe3, table_id=22, duration=215s, n_packets=11355, n_bytes=2899758, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,23)\ncookie=0x545d5dd1, table_id=23, duration=215s, n_packets=9843, n_bytes=2713685, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,24)\ncookie=0x293b8e23, table_id=24, duration=215s, n_packets=11287, n_bytes=2891290, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,25)\ncookie=0xa74034a0, table_id=25, duration=215s, n_packets=6398, n_bytes=957002, n_offload_packets=0, n_offload_bytes=0, priority=100,ct_state=+trk,ip,metadata=0x3,actions=set_field:0/0x80->reg10,resubmit(,68),move:NXM_NX_REG10[7]->NXM_NX_XXREG0[102],set_field:0/0x80->reg10,resubmit(,69),move:NXM_NX_REG10[7]->NXM_NX_XXREG0[108],resubmit(,26)\ntable_id=254, duration=400s, n_packets=40156, n_bytes=11041496, n_offload_packets=0, n_offload_bytes=0, priority=0,reg0=0x2,actions=drop\ntable_id=254, duration=400s, n_packets=40156, n_bytes=11041496, n_offload_packets=0, n_offload_bytes=0, priority=0,reg0=0x2,actions=drop\ncookie=0x6b84ac3c, table_id=26, duration=215s, n_packets=11287, n_bytes=2891290, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,27)\ncookie=0x74b786b6, table_id=27, duration=215s, n_packets=11287, n_bytes=2891290, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,28)\ncookie=0x9b79603c, table_id=28, duration=215s, n_packets=28248, n_bytes=7644189, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,29)\ncookie=0xfe5598e3, table_id=29, duration=215s, n_packets=30119, n_bytes=7987416, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,30)\ncookie=0xe2c70b68, table_id=30, duration=215s, n_packets=9416, n_bytes=2548063, n_offload_packets=0, n_offload_bytes=0, priority=500,reg8=0/0xc0000000,metadata=0x3,actions=set_field:0x4000000000000000/0xc000000000000000->xreg4,resubmit(,28)\ncookie=0x9b79603c, table_id=28, duration=215s, n_packets=28248, n_bytes=7644189, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,29)\ncookie=0xfe5598e3, table_id=29, duration=215s, n_packets=30119, n_bytes=7987416, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,30)\ncookie=0x964345ca, table_id=30, duration=215s, n_packets=9416, n_bytes=2548063, n_offload_packets=0, n_offload_bytes=0, priority=500,reg8=0x40000000/0xc0000000,metadata=0x3,actions=set_field:0x8000000000000000/0xc000000000000000->xreg4,resubmit(,28)\ncookie=0x9b79603c, table_id=28, duration=215s, n_packets=28248, n_bytes=7644189, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,29)\ncookie=0xfe5598e3, table_id=29, duration=215s, n_packets=30119, n_bytes=7987416, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,30)\ncookie=0xc9a3a50d, table_id=30, duration=215s, n_packets=9416, n_bytes=2548063, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=set_field:0/0x1000000000000->xreg4,set_field:0/0x2000000000000->xreg4,set_field:0/0x4000000000000->xreg4,set_field:0/0xc000000000000000->xreg4,resubmit(,31)\ncookie=0x81663e5b, table_id=31, duration=215s, n_packets=1902, n_bytes=212321, n_offload_packets=0, n_offload_bytes=0, priority=100,ip,reg0=0x2/0x2002,metadata=0x3,actions=ct(commit,zone=NXM_NX_REG13[0..15],nat(src),exec(set_field:0/0x1->ct_mark,move:NXM_NX_XXREG0[116]->NXM_NX_CT_MARK[6],move:NXM_NX_XXREG0[48..63]->NXM_NX_CT_LABEL[80..95])),resubmit(,32)\ncookie=0xfe5f41dc, table_id=32, duration=215s, n_packets=11244, n_bytes=2889484, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,33)\ncookie=0x5ccfc59a, table_id=33, duration=215s, n_packets=11271, n_bytes=2890618, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,34)\ncookie=0xdbf8a331, table_id=34, duration=215s, n_packets=11271, n_bytes=2890618, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,35)\ncookie=0x92ba781f, table_id=35, duration=215s, n_packets=11271, n_bytes=2890618, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,36)\ncookie=0xda4880c0, table_id=36, duration=215s, n_packets=11271, n_bytes=2890618, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,37)\ncookie=0x839552ec, table_id=37, duration=215s, n_packets=11271, n_bytes=2890618, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,38)\ncookie=0x8db7bf2e, table_id=38, duration=205s, n_packets=2, n_bytes=148, n_offload_packets=0, n_offload_bytes=0, priority=50,metadata=0x3,dl_dst=0a:58:0a:f4:01:07,actions=set_field:0x8->reg15,resubmit(,41)\ntable_id=41, duration=253s, n_packets=32838, n_bytes=11151928, n_offload_packets=0, n_offload_bytes=0, priority=0,actions=resubmit(,43)\ntable_id=43, duration=253s, n_packets=32830, n_bytes=11151368, n_offload_packets=0, n_offload_bytes=0, priority=0,actions=resubmit(,44)\ntable_id=44, duration=253s, n_packets=32838, n_bytes=11151928, n_offload_packets=0, n_offload_bytes=0, priority=0,actions=resubmit(,45)\ncookie=0x721da1e7, table_id=45, duration=205s, n_packets=2, n_bytes=148, n_offload_packets=0, n_offload_bytes=0, priority=100,reg15=0x8,metadata=0x3,actions=set_field:0x18/0xffff->reg13,set_field:0x4->reg11,set_field:0x5->reg12,resubmit(,46)\ntable_id=46, duration=253s, n_packets=32916, n_bytes=11155784, n_offload_packets=0, n_offload_bytes=0, priority=0,actions=set_field:0->reg0,set_field:0->reg1,set_field:0->reg2,set_field:0->reg3,set_field:0->reg4,set_field:0->reg5,set_field:0->reg6,set_field:0->reg7,set_field:0->reg8,set_field:0->reg9,resubmit(,47)\ncookie=0x467e9c8b, table_id=47, duration=215s, n_packets=11392, n_bytes=2896260, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,48)\ncookie=0xf1a3f80f, table_id=48, duration=215s, n_packets=11392, n_bytes=2896260, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,49)\ncookie=0x1115adce, table_id=49, duration=215s, n_packets=7077, n_bytes=2307788, n_offload_packets=0, n_offload_bytes=0, priority=100,ip,metadata=0x3,actions=set_field:0x1000000000000000000000000/0x1000000000000000000000000->xxreg0,resubmit(,50)\ncookie=0xfc3fdbc5, table_id=50, duration=215s, n_packets=7077, n_bytes=2307788, n_offload_packets=0, n_offload_bytes=0, priority=100,ip,metadata=0x3,actions=set_field:0x4000000000000000000000000/0x4000000000000000000000000->xxreg0,resubmit(,51)\ncookie=0x584ec513, table_id=51, duration=215s, n_packets=7077, n_bytes=2307788, n_offload_packets=0, n_offload_bytes=0, priority=110,ip,reg0=0x4/0x4,metadata=0x3,actions=ct(table=52,zone=NXM_NX_REG13[0..15],nat)\n",
+        "bebc931d-49f7-4615-9111-ec520b047e38": "cookie=0x32718e36, duration=205s, n_packets=1528, n_bytes=188871, n_offload_packets=0, n_offload_bytes=0, priority=100,in_port=6,actions=set_field:0x16/0xffff->reg13,set_field:0x4->reg11,set_field:0x5->reg12,set_field:0x3->metadata,set_field:0x4->reg14,set_field:0/0xffff0000->reg13,resubmit(,8)\ncookie=0x3f690dbf, table_id=8, duration=215s, n_packets=6597, n_bytes=973734, n_offload_packets=0, n_offload_bytes=0, priority=50,metadata=0x3,actions=set_field:0/0x1000->reg10,resubmit(,73),move:NXM_NX_REG10[12]->NXM_NX_XXREG0[111],resubmit(,9)\ncookie=0x32718e36, table_id=73, duration=205s, n_packets=1499, n_bytes=187297, n_offload_packets=0, n_offload_bytes=0, priority=90,ip,reg14=0x4,metadata=0x3,dl_src=0a:58:0a:f4:01:06,nw_src=10.244.1.6,actions=set_field:0/0x1000->reg10\ncookie=0x4851d988, table_id=9, duration=215s, n_packets=11357, n_bytes=2899876, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,10)\ncookie=0xa19109b2, table_id=10, duration=215s, n_packets=11357, n_bytes=2899876, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,11)\ncookie=0xb820e61c, table_id=11, duration=215s, n_packets=11357, n_bytes=2899876, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,12)\ncookie=0xc16beddc, table_id=12, duration=215s, n_packets=11357, n_bytes=2899876, n_offload_packets=0, n_offload_bytes=0, priority=0,metadata=0x3,actions=resubmit(,13)\ncookie=0x5ef8a8f3, table_id=13, duration=215s, n_packets=6468, n_bytes=965588, n_offload_packets=0, n_offload_bytes=0, priority=100,ip,metadata=0x3,actions=set_field:0x1000000000000000000000000/0x1000000000000000000000000->xxreg0,resubmit(,14)\ncookie=0x89e9d969, table_id=14, duration=215s, n_packets=6468, n_bytes=965588, n_offload_packets=0, n_offload_bytes=0, priority=100,ip,metadata=0x3,actions=set_field:0x4000000000000000000000000/0x4000000000000000000000000->xxreg0,resubmit(,15)\ncookie=0x65900d00, table_id=15, duration=215s, n_packets=2961, n_bytes=444828, n_offload_packets=0, n_offload_bytes=0, priority=110,ip,reg0=0x4/0x4,metadata=0x3,actions=ct(table=16,zone=NXM_NX_REG13[0..15],nat)\n"
+      }
+    }
+  ]
+}
