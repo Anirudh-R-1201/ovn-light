@@ -73,7 +73,7 @@ func (c *Client) Rollback(ctx context.Context, ref policy.ObjectRef, planID stri
 // Probe runs a fixed TCP connect command in the selected source pod. It neither
 // installs tools nor creates another pod whose identity would differ.
 func (c *Client) Probe(ctx context.Context, i policy.Intent) (string, error) {
-	if i.Kind != "NetworkPolicy" || i.Protocol != "TCP" {
+	if (i.Kind != "NetworkPolicy" && i.Kind != "EgressFirewall") || i.Protocol != "TCP" {
 		return "", fmt.Errorf("active verification is available for TCP policy proposals; use application tests for other protocols and network connections")
 	}
 	p, e := c.Core.CoreV1().Pods(i.Source.Namespace).Get(ctx, i.Source.Pod, meta.GetOptions{})
@@ -83,12 +83,14 @@ func (c *Client) Probe(ctx context.Context, i policy.Intent) (string, error) {
 	if string(p.UID) != i.Source.UID || len(p.Spec.Containers) == 0 {
 		return "", fmt.Errorf("source pod changed; choose the new pod in a fresh proposal")
 	}
-	d, e := c.Core.CoreV1().Pods(i.Destination.Namespace).Get(ctx, i.Destination.Pod, meta.GetOptions{})
-	if e != nil {
-		return "", e
-	}
-	if string(d.UID) != i.Destination.UID {
-		return "", fmt.Errorf("destination pod changed")
+	if i.Kind == "NetworkPolicy" {
+		d, e := c.Core.CoreV1().Pods(i.Destination.Namespace).Get(ctx, i.Destination.Pod, meta.GetOptions{})
+		if e != nil {
+			return "", e
+		}
+		if string(d.UID) != i.Destination.UID {
+			return "", fmt.Errorf("destination pod changed")
+		}
 	}
 	t := Target{p.Namespace, p.Name, p.Spec.Containers[0].Name}
 	port := strconv.Itoa(i.Port)

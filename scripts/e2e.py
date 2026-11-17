@@ -172,6 +172,45 @@ class Harness:
         self.eventually(lambda: self.connection(source, dest, False, routed=False))
         print('UDN connect: API rollback restored network separation.', flush=True)
 
+    def firewall(self):
+        namespace = 'ovn-light-egress'
+        state = self.api('refresh', {})
+        assert state['mode'] == 'live' and state['writesEnabled']
+        source = next(p for p in state['pods'] if p['namespace'] == namespace and p['pod'] == 'client' and p['network'] == 'default')
+        assert self.args.external_ip, 'Provide the disposable external listener IP'
+        dest = {'ip': self.args.external_ip, 'network': 'default'}
+        before = self.get('egressfirewall', 'default', '-n', namespace)
+        def observed():
+            self.connection(source, dest, False)
+            state = self.api('refresh', {})
+            matches = [f for f in state['findings'] if f['source'].get('uid') == source['uid']
+                       and any(c['type'] == 'EgressFirewall' and c['namespace'] == namespace and c['rule'] == '1' for c in (f['causes'] or []))]
+            assert matches, 'No drop attributed to the existing EgressFirewall deny rule'
+            return matches[0]
+        finding = self.eventually(observed)
+        plan = self.api('plans', {'kind': 'EgressFirewall', 'findingID': finding['id'], 'source': source,
+                    'destination': dest, 'protocol': 'TCP', 'port': 8080})
+        assert plan['firewallChange']['index'] == 1 and plan['firewallChange']['uid'] == before['metadata']['uid']
+        assert plan['scope']['policyKind'] == 'EgressFirewall'
+        expected = {'type': 'Allow', 'to': {'cidrSelector': dest['ip'] + '/32'}, 'ports': [{'protocol': 'TCP', 'port': 8080}]}
+        assert plan['objects'][0]['spec']['egress'] == [before['spec']['egress'][0], expected, before['spec']['egress'][1]]
+        assert self.get('egressfirewall', 'default', '-n', namespace)['spec'] == before['spec'], 'Dry-run changed the firewall'
+        print('EgressFirewall: observed deny ACL and rule index → reviewed namespace-wide /32 TCP exception.', flush=True)
+        try:
+            assert self.api(f"plans/{plan['id']}/apply", {})['status'] == 'applied'
+            self.eventually(lambda: self.connection(source, dest, True))
+            assert self.api(f"plans/{plan['id']}/verify", {})['status'] == 'verified'
+            self.connection(source, dest, False, port=8081)
+            print('EgressFirewall: inserted Allow before Deny; external TCP/8080 and API Verify succeed; TCP/8081 remains denied.', flush=True)
+        finally:
+            current = next(p for p in self.api('plans') if p['id'] == plan['id'])
+            if current.get('applied'):
+                assert self.api(f"plans/{plan['id']}/rollback", {})['status'] == 'rolled-back'
+        self.eventually(lambda: self.connection(source, dest, False))
+        restored = self.get('egressfirewall', 'default', '-n', namespace)
+        assert restored['metadata']['uid'] == before['metadata']['uid'] and restored['spec'] == before['spec']
+        print('EgressFirewall: rollback restored denial and preserved the existing firewall UID and ordered rules.', flush=True)
+
     def artifacts(self):
         if self.args.artifacts:
             directory = Path(self.args.artifacts)
@@ -185,12 +224,13 @@ class Harness:
 
 def main(default_lane='cdn'):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--lane', choices=['cdn', 'udn', 'secondary'], default=default_lane)
+    parser.add_argument('--lane', choices=['cdn', 'udn', 'secondary', 'egress'], default=default_lane)
     parser.add_argument('--url', default='http://127.0.0.1:8080')
     parser.add_argument('--token-file', required=True)
     parser.add_argument('--kubeconfig')
     parser.add_argument('--context')
     parser.add_argument('--artifacts')
+    parser.add_argument('--external-ip', help='Disposable external listener for the EgressFirewall lane')
     args = parser.parse_args()
     harness = Harness(args)
     try:
@@ -199,8 +239,10 @@ def main(default_lane='cdn'):
         elif args.lane == 'udn':
             harness.policy('ovn-light-red', 'primary')
             harness.connect()
-        else:
+        elif args.lane == 'secondary':
             harness.policy('ovn-light-secondary', 'secondary')
+        else:
+            harness.firewall()
     finally:
         harness.artifacts()
 

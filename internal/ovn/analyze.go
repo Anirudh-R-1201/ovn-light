@@ -71,6 +71,17 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 			proto, port := transport(p.Identity)
 			dst.Port = port
 			causes := causesFor(n, p)
+			externalFirewall := false
+			for j := range causes {
+				if causes[j].Type == "EgressFirewall" {
+					externalFirewall = externalFirewall || causes[j].Namespace == src.Namespace && dst.Pod == "" && dst.IP != ""
+					for _, ef := range s.Inventory.Resources["egressfirewalls"] {
+						if ef.GetNamespace() == causes[j].Namespace {
+							causes[j].Name = ef.GetName()
+						}
+					}
+				}
+			}
 			var ids []string
 			steps := []model.Step{}
 			for _, f := range p.Flows {
@@ -91,7 +102,7 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 			if src.Pod == "" {
 				f.Warnings = append(f.Warnings, "Source workload is unresolved (tunnel, host port, or missing attachment).")
 			}
-			if dst.Pod == "" {
+			if dst.Pod == "" && !externalFirewall {
 				f.Warnings = append(f.Warnings, "Destination workload is unresolved or shared across networks.")
 			}
 			if port == 0 {
@@ -105,6 +116,10 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 			}
 			for _, cause := range causes {
 				if cause.Type == "NetpolNamespace" && f.Confidence == "connection" {
+					f.CanRecommend = true
+				}
+				if cause.Type == "EgressFirewall" && cause.Namespace == src.Namespace && src.Network == "default" && src.Role == "primary" && dst.IP != "" && dst.Pod == "" && port > 0 && p.Complete && !f.SharedCounter {
+					f.Confidence = "connection"
 					f.CanRecommend = true
 				}
 			}
@@ -330,6 +345,13 @@ func causesFor(n model.NodeSnapshot, p datapath.Path) []model.PolicyCause {
 			c.Name = ""
 		} else if c.Type == "NetworkPolicy" {
 			c.Namespace, c.Name, _ = strings.Cut(c.Name, ":")
+		}
+		if c.Type == "EgressFirewall" {
+			c.Rule = Str(ext["rule-index"])
+			if c.Rule == "" {
+				c.Rule = Str(ext["rule-idx"])
+			}
+			c.Direction = "Egress"
 		}
 		out = append(out, c)
 	}

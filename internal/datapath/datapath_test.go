@@ -81,6 +81,28 @@ func TestCycleBounded(t *testing.T) {
 	}
 }
 
+func TestDropAfterConntrackCommit(t *testing.T) {
+	commit := "ct(commit,zone=21,mark=0/0x41,label=0/0xffff00000000000000000000,nat(src))"
+	for _, actions := range []string{commit, "set(skb_mark(0))," + commit, "ct_clear," + commit} {
+		if Terminal(actions) != "drop" {
+			t.Fatalf("missed implicit drop: %s", actions)
+		}
+	}
+	for _, actions := range []string{commit + ",eth0", commit + ",recirc(1)", "clone(eth0)," + commit, "userspace(pid=1)," + commit, "ct(zone=21)", "ct(commit,table=1)", "drop(1),2"} {
+		if Terminal(actions) != "" {
+			t.Fatalf("invented unconditional drop: %s", actions)
+		}
+	}
+	flows, _ := Parse("ufid:a,recirc_id(0),in_port(4),ipv4(src=10.0.0.2,dst=203.0.113.8),packets:3,actions:ct(zone=21,nat),recirc(1)\nufid:b,recirc_id(1),in_port(4),packets:3,actions:" + commit)
+	paths := Reconstruct(flows)
+	if len(paths) != 1 || len(paths[0].Flows) != 2 || paths[0].Original["ipv4.src"] != "10.0.0.2" {
+		t.Fatal(paths)
+	}
+	if paths[0].Identity["ipv4.dst"] != "" {
+		t.Fatal("pre-NAT destination was presented as known")
+	}
+}
+
 func TestMaskedIngressPortAndSharedContinuation(t *testing.T) {
 	fs, _ := Parse(`ufid:a,recirc_id(0),in_port(4),ipv4(src=10.0.0.1),packets:3,actions:recirc(1)
 ufid:b,recirc_id(0),in_port(5),ipv4(src=10.0.0.2),packets:4,actions:recirc(1)

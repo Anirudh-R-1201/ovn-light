@@ -15,6 +15,7 @@ The name is an oven light: a way to see what is happening inside OVN while it is
 - Pod and network identity, including primary UDNs and overlapping IP ranges. Filter by network, node, workload or policy.
 - Namespace default-deny ACL attribution when the translation cache and OVN stage hints are available.
 - NetworkPolicy or MultiNetworkPolicy proposals inferred from the observed attachment, with the affected network shown in review. Both ingress and egress are evaluated.
+- EgressFirewall drop attribution and reviewed IP/port exceptions inserted before the matching deny rule, with namespace-wide scope, TCP verification and guarded rule rollback.
 - Review affected pods and YAML, admission dry-run, apply, optional TCP verification, persistent change history and guarded rollback.
 - Reviewed connections between two primary UDNs through ClusterNetworkConnect when its API is available.
 - A self-contained web UI, offline snapshot replay and a clearly marked synthetic demo.
@@ -48,7 +49,7 @@ kubectl --context kind-ovn -n ovn-light get secret ovn-light-auth \
   -o jsonpath='{.data.token}' | base64 -d
 ```
 
-The deployment enables reviewed writes. To run read only, remove `--enable-writes` and the `create`/`delete` verbs for NetworkPolicy, MultiNetworkPolicy and ClusterNetworkConnect in `deploy/ovn-light.yaml`. Collection still requires `pods/exec` in the OVN namespace.
+The deployment enables reviewed writes. To run read only, remove `--enable-writes`, the `create`/`delete` verbs for NetworkPolicy, MultiNetworkPolicy and ClusterNetworkConnect, and the `patch` verb for EgressFirewall in `deploy/ovn-light.yaml`. Collection still requires `pods/exec` in the OVN namespace.
 
 ### Generate a denied connection
 
@@ -105,6 +106,33 @@ Secondary proposals require the MultiNetworkPolicy API, OVN-managed subnets and 
 
 **Networks → Connect networks** generates a ClusterNetworkConnect for two primary UDNs. Choose a connect subnet from your address plan. The planner rejects known overlap and requires selectors that match exactly the chosen networks in current inventory. ClusterUserDefinedNetworks need suitable existing labels. The UI never silently labels or rewrites a network. Cross-network NetworkPolicy proposals are not supported.
 
+## External traffic and EgressFirewall
+
+An attributed EgressFirewall drop offers **Review an EgressFirewall exception**.
+OVN-Light identifies the namespace, firewall and zero-based ACL rule index, then
+evaluates the current rules in order. Supply an exact external IP, protocol and
+port when the flow cache leaves them wildcarded. A manual review is also available
+under **Review a connection → Review external EgressFirewall traffic**.
+
+The proposal inserts an Allow for one `/32` (IPv4) or `/128` (IPv6) and one port
+immediately before the matching Deny. Review shows the current and proposed
+firewalls and the insertion position. **The allowance affects all current and
+future pods in the namespace on the default network**, not just the source pod.
+This is an edit to an existing firewall, not an additive NetworkPolicy.
+
+Apply performs admission dry-run and an atomic JSON Patch that tests the reviewed
+UID and original spec. **Remove inserted allow rule** keeps the firewall itself
+and restores its original rule order; later spec edits or replacement block
+rollback. TCP verification connects from the selected source pod to the external
+IP and port. The deployment needs `patch` permission on EgressFirewalls.
+
+This action currently supports the primary CDN and CIDR rules. It declines UDNs,
+secondary networks, conflicting source egress NetworkPolicies, applicable
+administrative policies and earlier DNS/node-selector rules whose matching cannot
+be established. It does not infer domain names from IPs, resolve DNS on behalf of
+the workload, or create a second firewall. `examples/egress-firewall.yaml` provides
+an isolated namespace for exercising this workflow.
+
 ## Access and deployment model
 
 This is an administrator tool. The token grants access to the server’s service account; it does **not** impersonate the browser user’s Kubernetes identity. Use ClusterIP plus `kubectl port-forward`. An internet-facing deployment needs a TLS/authentication proxy and an appropriate authorization design.
@@ -124,6 +152,6 @@ make image  # static binary in a scratch image; override IMAGE=... as needed
 
 Collection, reconstruction, policy planning and the backend are Go. The embedded UI uses HTML, CSS and plain JavaScript, with no frontend build step or CDN. Optional browser checks use Playwright: run the demo, then `node scripts/browser-smoke.cjs` with Playwright installed in your development environment.
 
-GitHub Actions runs Go race/vet checks, browser tests, and three isolated KIND integration lanes: CDN, primary UDN plus ClusterNetworkConnect, and secondary MultiNetworkPolicy. Each deploys OVN-Kubernetes and OVN-Light, observes a real policy drop, exercises proposal/apply/rollback through the API, and verifies traffic before and after. See [CI and local reproduction](docs/testing.md#continuous-integration).
+GitHub Actions runs Go race/vet checks, browser tests, and four isolated KIND integration lanes: CDN, primary UDN plus ClusterNetworkConnect, secondary MultiNetworkPolicy, and EgressFirewall. Each deploys OVN-Kubernetes and OVN-Light, observes a real policy drop, exercises proposal/apply/rollback through the API, and verifies traffic before and after. See [CI and local reproduction](docs/testing.md#continuous-integration).
 
 Licensed under Apache-2.0. See [LICENSE](LICENSE).

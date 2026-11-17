@@ -10,8 +10,27 @@ import (
 	"github.com/trozet/ovn-light/internal/app"
 	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/ovn"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 )
+
+func TestEgressFirewallRuleAttribution(t *testing.T) {
+	s := app.Demo()
+	s.Nodes[0].Flows = strings.ReplaceAll(s.Nodes[0].Flows, "dst=10.244.0.12", "dst=203.0.113.8")
+	s.Nodes[0].ACLs[0]["external_ids"] = map[string]any{"k8s.ovn.org/owner-type": "EgressFirewall", "k8s.ovn.org/name": "storefront", "rule-idx": "3"}
+	s.Inventory.Resources["egressfirewalls"] = []unstructured.Unstructured{{Object: map[string]any{"metadata": map[string]any{"namespace": "storefront", "name": "default"}}}}
+	for _, f := range ovn.Analyze(s, nil).Findings {
+		if f.Destination.IP != "203.0.113.8" {
+			continue
+		}
+		c := f.Causes[0]
+		if c.Type != "EgressFirewall" || c.Namespace != "storefront" || c.Name != "default" || c.Rule != "3" || c.Direction != "Egress" || !f.CanRecommend {
+			t.Fatal(f)
+		}
+		return
+	}
+	t.Fatal("external firewall drop was lost")
+}
 
 func TestOverlappingUDNIPsDoNotCrossIdentity(t *testing.T) {
 	s := app.Demo()

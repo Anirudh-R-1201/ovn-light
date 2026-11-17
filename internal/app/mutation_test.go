@@ -3,11 +3,13 @@ package app
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/trozet/ovn-light/internal/kube"
+	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/policy"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -18,6 +20,70 @@ import (
 	clientfake "k8s.io/client-go/kubernetes/fake"
 	ktesting "k8s.io/client-go/testing"
 )
+
+func TestFirewallRollbackAfterRestart(t *testing.T) {
+	a, i := liveFake(t)
+	ctx := context.Background()
+	i.Kind = "EgressFirewall"
+	i.Destination = model.Endpoint{IP: "203.0.113.8"}
+	r := a.Client.Dynamic.Resource(kube.Resources["egressfirewalls"]).Namespace(i.Source.Namespace)
+	original := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "k8s.ovn.org/v1", "kind": "EgressFirewall", "metadata": map[string]any{"name": "default", "namespace": i.Source.Namespace}, "spec": map[string]any{"egress": []any{map[string]any{"type": "Deny", "to": map[string]any{"cidrSelector": "0.0.0.0/0"}}}}}}
+	original, err := r.Create(ctx, original, meta.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fake tracker ignores dry-run patch options. Return a copy here so
+	// preparation retains the original object, as the API server would.
+	a.Client.Dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("patch", "egressfirewalls", func(action ktesting.Action) (bool, runtime.Object, error) {
+		if len(action.(ktesting.PatchActionImpl).GetPatchOptions().DryRun) > 0 {
+			return true, original.DeepCopy(), nil
+		}
+		return false, nil, nil
+	})
+	snapshot := a.Snapshot()
+	snapshot.Inventory.Resources["egressfirewalls"] = []unstructured.Unstructured{*original}
+	snapshot.Nodes[0].Flows = strings.ReplaceAll(snapshot.Nodes[0].Flows, "dst=10.244.0.12", "dst=203.0.113.8")
+	snapshot.Nodes[0].ACLs[0]["external_ids"] = map[string]any{"k8s.ovn.org/owner-type": "EgressFirewall", "k8s.ovn.org/name": i.Source.Namespace, "rule-index": "0"}
+	a.Load(snapshot)
+	for _, finding := range a.State().Findings {
+		if finding.Destination.IP == i.Destination.IP {
+			i.FindingID = finding.ID
+		}
+	}
+	if i.FindingID == "" {
+		t.Fatal("missing firewall evidence")
+	}
+	other := i
+	other.Destination.IP = "203.0.113.9"
+	if _, err := a.Prepare(ctx, other); err == nil {
+		t.Fatal("changed observed destination accepted")
+	}
+	other = i
+	other.Port = 8443
+	if _, err := a.Prepare(ctx, other); err == nil {
+		t.Fatal("changed observed port accepted")
+	}
+	p, err := a.Prepare(ctx, i)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = a.Apply(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := New("live", a.DataDir, a.Client, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = restarted.Rollback(ctx, p.ID)
+	if err != nil || p.Status != "rolled-back" {
+		t.Fatal(p, err)
+	}
+	restored, err := r.Get(ctx, "default", meta.GetOptions{})
+	if err != nil || restored.GetUID() != original.GetUID() || !reflect.DeepEqual(restored.Object["spec"], original.Object["spec"]) {
+		t.Fatal(restored, err)
+	}
+}
 
 func liveFake(t *testing.T) (*App, policy.Intent) {
 	t.Helper()

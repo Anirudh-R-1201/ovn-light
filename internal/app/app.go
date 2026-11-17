@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/trozet/ovn-light/internal/ovn"
 	"github.com/trozet/ovn-light/internal/policy"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type App struct {
@@ -175,6 +177,7 @@ func (a *App) Plans() []policy.Plan {
 func (a *App) Prepare(ctx context.Context, i policy.Intent) (policy.Plan, error) {
 	a.operation.Lock()
 	defer a.operation.Unlock()
+	var evidence *model.Finding
 	if i.FindingID != "" {
 		var finding *model.Finding
 		for _, f := range a.State().Findings {
@@ -186,6 +189,7 @@ func (a *App) Prepare(ctx context.Context, i policy.Intent) (policy.Plan, error)
 		if finding == nil {
 			return policy.Plan{}, fmt.Errorf("drop evidence expired; refresh the issue or start a new connection review")
 		}
+		evidence = finding
 		network := ""
 		for _, e := range []model.Endpoint{finding.Source, finding.Destination} {
 			if e.Network != "" {
@@ -221,9 +225,20 @@ func (a *App) Prepare(ctx context.Context, i policy.Intent) (policy.Plan, error)
 	if err != nil {
 		return p, err
 	}
+	if p.FirewallChange != nil && evidence != nil {
+		matched := false
+		for _, cause := range evidence.Causes {
+			if cause.Type == "EgressFirewall" && cause.Namespace == p.Intent.Source.Namespace && cause.Rule == strconv.Itoa(p.FirewallChange.Index) {
+				matched = true
+			}
+		}
+		if !matched || evidence.Source.UID != "" && evidence.Source.UID != p.Intent.Source.UID || evidence.Destination.IP != "" && evidence.Destination.IP != p.Intent.Destination.IP || evidence.Protocol != "" && evidence.Protocol != p.Intent.Protocol || evidence.Destination.Port > 0 && evidence.Destination.Port != p.Intent.Port {
+			return p, fmt.Errorf("the selected connection or matching firewall rule differs from the drop evidence; refresh or start a new external connection review")
+		}
+	}
 	if a.Mode == "live" && a.Writes {
 		for _, o := range p.Objects {
-			if _, err = a.Client.Create(ctx, o, true); err != nil {
+			if _, err = a.writeObject(ctx, &p, o, true); err != nil {
 				return p, fmt.Errorf("admission dry-run failed: %w", err)
 			}
 		}
@@ -261,7 +276,7 @@ func (a *App) Apply(ctx context.Context, id string) (policy.Plan, error) {
 		return fail(fmt.Errorf("policies, networks or workload identity changed; generate and review a new proposal"))
 	}
 	for _, o := range p.Objects {
-		if _, err = a.Client.Create(ctx, o, true); err != nil {
+		if _, err = a.writeObject(ctx, p, o, true); err != nil {
 			return fail(fmt.Errorf("admission dry-run failed: %w", err))
 		}
 	}
@@ -271,10 +286,10 @@ func (a *App) Apply(ctx context.Context, id string) (policy.Plan, error) {
 		return fail(err)
 	}
 	for _, o := range p.Objects {
-		created, e := a.Client.Create(ctx, o, false)
+		created, e := a.writeObject(ctx, p, o, false)
 		if e != nil {
 			p.Status = "apply-failed"
-			p.Warnings = append(p.Warnings, "Create failed; some objects may have been applied. On a transport timeout check all planned object names before retrying. "+e.Error())
+			p.Warnings = append(p.Warnings, "Write failed; some changes may have been applied. On a transport timeout inspect the planned objects before retrying. "+e.Error())
 			persistErr := a.persist(p)
 			return fail(errors.Join(e, persistErr))
 		}
@@ -308,8 +323,13 @@ func (a *App) Rollback(ctx context.Context, id string) (policy.Plan, error) {
 	for len(p.Applied) > 0 {
 		index := len(p.Applied) - 1
 		ref := p.Applied[index]
-		err := a.Client.Rollback(ctx, ref, p.ID)
-		if err != nil && !apierrors.IsNotFound(err) {
+		var err error
+		if p.FirewallChange != nil {
+			err = a.Client.RollbackFirewall(ctx, p.FirewallChange, ref)
+		} else {
+			err = a.Client.Rollback(ctx, ref, p.ID)
+		}
+		if err != nil && (p.FirewallChange != nil || !apierrors.IsNotFound(err)) {
 			p.Status = "rollback-failed"
 			_ = a.persist(p)
 			return clonePlan(p), err
@@ -321,8 +341,18 @@ func (a *App) Rollback(ctx context.Context, id string) (policy.Plan, error) {
 	}
 	p.Status = "rolled-back"
 	p.Verification = "Created resources were removed. Previous policy behavior should return after OVN converges."
+	if p.FirewallChange != nil {
+		p.Verification = "The inserted allow rule was removed; the existing EgressFirewall was preserved. Verify denial after OVN converges."
+	}
 	err := a.persist(p)
 	return clonePlan(p), err
+}
+
+func (a *App) writeObject(ctx context.Context, p *policy.Plan, o unstructured.Unstructured, dryRun bool) (*unstructured.Unstructured, error) {
+	if p.FirewallChange != nil {
+		return a.Client.PatchFirewall(ctx, p.FirewallChange, o, dryRun)
+	}
+	return a.Client.Create(ctx, o, dryRun)
 }
 func (a *App) Verify(ctx context.Context, id string) (policy.Plan, error) {
 	a.operation.Lock()

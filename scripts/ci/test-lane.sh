@@ -1,15 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-cluster="${1:?Usage: test-lane.sh cluster-name cdn|udn|secondary artifact-directory}"
+cluster="${1:?Usage: test-lane.sh cluster-name cdn|udn|secondary|egress artifact-directory}"
 lane="${2:?Missing lane}"
 artifacts="${3:?Missing artifact directory}"
 context="kind-$cluster"
 mkdir -p "$artifacts"
+token_file=''
+forward_pid=''
+external_container=''
+extra_args=()
+cleanup() {
+  [[ -z "$forward_pid" ]] || kill "$forward_pid" 2>/dev/null || true
+  [[ -z "$token_file" ]] || rm -f "$token_file"
+  [[ -z "$external_container" ]] || docker rm -f "$external_container" >/dev/null
+}
+trap cleanup EXIT
 case "$lane" in
   cdn) fixture=denied-traffic; namespaces=(ovn-light-demo) ;;
   udn) fixture=user-defined-networks; namespaces=(ovn-light-red ovn-light-blue) ;;
   secondary) fixture=secondary-network; namespaces=(ovn-light-secondary) ;;
+  egress)
+    fixture=egress-firewall; namespaces=(ovn-light-egress)
+    external_container="$(docker run -d --name "$cluster-egress-target" --network kind registry.k8s.io/e2e-test-images/agnhost:2.45 netexec --http-port=8080 --udp-port=-1)"
+    external_ip="$(docker inspect "$external_container" --format '{{.NetworkSettings.Networks.kind.IPAddress}}')"
+    for _attempt in {1..30}; do
+      if docker exec "$external_container" /agnhost connect 127.0.0.1:8080 --timeout=1s; then break; fi
+      sleep 1
+    done
+    extra_args=(--external-ip "$external_ip")
+    ;;
   *) echo "Unknown lane: $lane" >&2; exit 1 ;;
 esac
 kubectl --context "$context" apply -f "examples/$fixture.yaml"
@@ -22,12 +42,6 @@ for ns in "${namespaces[@]}"; do
   kubectl --context "$context" -n "$ns" wait pods --all --for=condition=Ready --timeout=180s
 done
 token_file="$(mktemp)"
-forward_pid=''
-cleanup() {
-  [[ -z "$forward_pid" ]] || kill "$forward_pid" 2>/dev/null || true
-  rm -f "$token_file"
-}
-trap cleanup EXIT
 kubectl --context "$context" -n ovn-light get secret ovn-light-auth -o jsonpath='{.data.token}' | base64 -d >"$token_file"
 # Let the OS pick a free localhost port, including when several lanes run locally.
 kubectl --context "$context" -n ovn-light port-forward service/ovn-light :8080 >"$artifacts/port-forward.log" 2>&1 &
@@ -41,4 +55,4 @@ for _attempt in {1..60}; do
 done
 [[ -n "$port" ]]
 python3 scripts/e2e.py --lane "$lane" --url "http://127.0.0.1:$port" \
-  --token-file "$token_file" --context "$context" --artifacts "$artifacts"
+  --token-file "$token_file" --context "$context" --artifacts "$artifacts" "${extra_args[@]}"

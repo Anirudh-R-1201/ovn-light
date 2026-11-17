@@ -45,21 +45,23 @@ type ObjectRef struct {
 	SpecHash  string `json:"specHash"`
 }
 type Plan struct {
-	ID           string                      `json:"id"`
-	Kind         string                      `json:"kind"`
-	Scope        *Scope                      `json:"scope,omitempty"`
-	CreatedAt    time.Time                   `json:"createdAt"`
-	ExpiresAt    time.Time                   `json:"expiresAt"`
-	Intent       Intent                      `json:"intent"`
-	Fingerprint  string                      `json:"-"`
-	Summary      string                      `json:"summary"`
-	Manifests    string                      `json:"manifests"`
-	Objects      []unstructured.Unstructured `json:"objects"`
-	Affected     []string                    `json:"affected"`
-	Warnings     []string                    `json:"warnings"`
-	Status       string                      `json:"status"`
-	Applied      []ObjectRef                 `json:"applied"`
-	Verification string                      `json:"verification,omitempty"`
+	ID             string                      `json:"id"`
+	Kind           string                      `json:"kind"`
+	Scope          *Scope                      `json:"scope,omitempty"`
+	FirewallChange *FirewallChange             `json:"firewallChange,omitempty"`
+	BeforeManifest string                      `json:"beforeManifest,omitempty"`
+	CreatedAt      time.Time                   `json:"createdAt"`
+	ExpiresAt      time.Time                   `json:"expiresAt"`
+	Intent         Intent                      `json:"intent"`
+	Fingerprint    string                      `json:"-"`
+	Summary        string                      `json:"summary"`
+	Manifests      string                      `json:"manifests"`
+	Objects        []unstructured.Unstructured `json:"objects"`
+	Affected       []string                    `json:"affected"`
+	Warnings       []string                    `json:"warnings"`
+	Status         string                      `json:"status"`
+	Applied        []ObjectRef                 `json:"applied"`
+	Verification   string                      `json:"verification,omitempty"`
 }
 
 func Build(inv model.Inventory, intent Intent, id string) (Plan, error) {
@@ -74,6 +76,8 @@ func Build(inv model.Inventory, intent Intent, id string) (Plan, error) {
 		err = buildPolicy(inv, &p)
 	case "ClusterNetworkConnect":
 		err = buildConnect(inv, &p)
+	case "EgressFirewall":
+		err = buildFirewall(inv, &p)
 	default:
 		err = fmt.Errorf("unsupported action kind %q", intent.Kind)
 	}

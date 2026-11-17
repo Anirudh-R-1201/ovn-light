@@ -111,10 +111,13 @@ All jobs use ephemeral clusters and need no repository secrets.
 | `cdn` | Observed policy denial → inferred NetworkPolicy → admission dry-run → API apply → direct TCP and API Verify success → API rollback → denial restored |
 | `udn` | The same policy lifecycle on a primary UDN; then ClusterNetworkConnect proposal/apply → Accepted status **and actual cross-UDN TCP success** → rollback restores network separation |
 | `secondary` | Observed secondary drop → inferred MultiNetworkPolicy with exact NAD → API apply opens secondary TCP while primary stays denied → rollback restores secondary denial |
+| `egress` | Attributed external deny and rule index → dry-run leaves firewall unchanged → insert a host-IP TCP allowance before the deny → real external TCP and API Verify succeed → rollback restores denial and preserves firewall UID/rule order |
 
-Every policy lane also checks that TCP/8081 stays denied, dry-run creates no
-resource, rollback removes only the generated object, and existing policies retain
-their UID and definition. Polls allow bounded controller convergence; failures to
+Every policy lane also checks that TCP/8081 stays denied, dry-run leaves cluster
+state unchanged, and rollback preserves existing policies. EgressFirewall restores
+the original rules instead of deleting the firewall. Its lane starts a disposable
+Docker TCP listener on the KIND node network, outside Kubernetes pod and Service
+address ranges; it does not depend on internet endpoint availability. Polls allow bounded controller convergence; failures to
 run a probe are not treated as successful denial. The other workflow runs Go race
 tests, vet, shell checks and headless Chromium proposal/network-scope tests.
 
@@ -131,7 +134,7 @@ export KUBECONFIG="$(mktemp -d)/kubeconfig"
 export KIND_CLUSTER=ovn-light-ci-local
 scripts/ci/create-cluster.sh "$KIND_CLUSTER"
 scripts/deploy-kind.sh "$KIND_CLUSTER"
-for lane in cdn udn secondary; do
+for lane in cdn udn secondary egress; do
   scripts/ci/test-lane.sh "$KIND_CLUSTER" "$lane" ".artifacts/$lane"
 done
 scripts/ci/diagnostics.sh "$KIND_CLUSTER" .artifacts/diagnostics

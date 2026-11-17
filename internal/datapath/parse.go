@@ -179,11 +179,21 @@ func Recircs(actions string) []string {
 	return ids
 }
 
-// Terminal classifies only unconditional terminal actions. Nested branches are
-// intentionally excluded until their predicates are modeled.
+// A conntrack commit without forwarding is also a drop. Only known side effects
+// qualify; output, recirculation, userspace and nested branches remain excluded.
 func Terminal(actions string) string {
-	if actions == "" || actions == "drop" || strings.HasPrefix(actions, "drop(") {
-		return "drop"
+	for _, action := range Split(actions) {
+		switch {
+		case action == "drop", action == "ct_clear":
+		case strings.HasPrefix(action, "drop(") && strings.HasSuffix(action, ")"):
+		case strings.HasPrefix(action, "set(") && strings.HasSuffix(action, ")"):
+		case strings.HasPrefix(action, "ct(commit,") && strings.HasSuffix(action, ")"), action == "ct(commit)":
+			if strings.Contains(action, "table=") || strings.Contains(action, "exec(") {
+				return ""
+			}
+		default:
+			return ""
+		}
 	}
-	return ""
+	return "drop"
 }

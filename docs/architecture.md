@@ -52,13 +52,28 @@ Both directions are evaluated, including peer selectors (namespace AND pod), IPB
 
 Secondary selector proposals require managed subnets and explicit `policyTypes` in existing applicable MultiNetworkPolicies. Ambiguous direction defaults, missing APIs/NADs and IPAM-less/DHCP networks are declined. The feature flag must be enabled in OVN: admission success alone does not establish enforcement. Full current pod labels favor narrow scope and can include rollout hashes; matching future pods also receive permission.
 
-For primary networks, the planner conservatively declines when an AdminNetworkPolicy or BaselineAdminNetworkPolicy selects an endpoint, or an EgressFirewall controls the source. Their ordered semantics are not implemented here. Cross-network remediation is declined. No new allow is suggested when the selected network's policies already permit the connection.
+For primary networks, the planner conservatively declines when an AdminNetworkPolicy or BaselineAdminNetworkPolicy selects an endpoint, or an EgressFirewall controls the source. Administrative policy remediation is not implemented here. EgressFirewall has a separate external-connection workflow. Cross-network remediation is declined. No new allow is suggested when the selected network's policies already permit the connection.
 
-Plans expire after ten minutes. Applying fetches inventory again, checks policy/network/identity inputs and repeats admission dry-run. Only generated objects are created. Multi-object creation is not transactional: partial failure is recorded, and positively recorded objects remain eligible for rollback. Policy changes can race the final inventory read; Kubernetes has no transaction spanning this check and all resource creates.
+EgressFirewall ACL attribution reads `rule-index` (or legacy `rule-idx`) and associates the namespace with
+its existing firewall. The separate planner accepts an exact external IP/port on
+the primary CDN. It evaluates ordered CIDR rules and inserts a single host-prefix
+allow immediately before the matching deny. Existing earlier allows suppress an
+unnecessary proposal. Earlier DNS/node-selector rules with matching ports are
+ambiguous and require manual review. Source NetworkPolicy egress must already
+allow the connection; administrative policies remain a guard. The review lists
+namespace-wide scope, original/proposed YAML and the insertion position.
 
-Audit records are atomically replaced JSON files in `--data-dir`. Use persistent storage and one replica. An interrupted mutation is marked on restart. A timed-out create may still have reached the API server: inspect all proposed object names before generating another plan. Rollback rejects changed UIDs, ownership, specs, MultiNetworkPolicy target annotations or resource versions. The audit is an administrative record, not a tamper-proof compliance log.
+The firewall patch atomically tests its UID and original spec before inserting.
+Rollback checks the recorded post-apply spec hash and UID, then atomically tests
+the current resource version and spec before removing just the inserted rule.
+No ownership annotations are added to the user's firewall, and no EgressFirewall
+is created or deleted. A later spec edit blocks rollback instead of overwriting it.
 
-Primary-network verification runs an explicit TCP connection from the source container using an existing `python3`, `/agnhost` or `nc`. It installs nothing and does not substitute another pod identity. Success proves transport reachability, not application behavior. Secondary networks require a probe on the selected interface; the built-in probe is disabled for MultiNetworkPolicy proposals. UDP/SCTP and CNC verification also require application tests.
+Plans expire after ten minutes. Applying fetches inventory again, checks policy/network/identity inputs and repeats admission dry-run. NetworkPolicy, MultiNetworkPolicy and CNC actions create generated objects. EgressFirewall actions patch the existing rule list. Multi-object creation is not transactional: partial failure is recorded, and positively recorded objects remain eligible for rollback. Policy changes can race the final inventory read; Kubernetes has no transaction spanning this check and all resource creates.
+
+Audit records are atomically replaced JSON files in `--data-dir`. Use persistent storage and one replica. An interrupted mutation is marked on restart. A timed-out write may still have reached the API server: inspect all proposed object names before generating another plan. Rollback rejects changed UIDs, ownership, specs, MultiNetworkPolicy target annotations or resource versions. The audit is an administrative record, not a tamper-proof compliance log.
+
+Primary-network and EgressFirewall verification run an explicit TCP connection from the source container using an existing `python3`, `/agnhost` or `nc`. It installs nothing and does not substitute another pod identity. Success proves transport reachability, not application behavior. Secondary networks require a probe on the selected interface; the built-in probe is disabled for MultiNetworkPolicy proposals. UDP/SCTP and CNC verification also require application tests.
 
 ## Offload and coverage
 
