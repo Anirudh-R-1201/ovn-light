@@ -1,31 +1,39 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 'use strict';
-const topologyState={graph:null,edge:null,connection:null,paused:false,request:0,initialized:false};
+const topologyState={graph:null,edge:null,connection:null,paused:false,request:0,initialized:false,camera:{x:0,y:0,k:1},positions:new Map(),layoutKey:''};
 const trafficStatus={both:'Both ends observed',local:'Local forwarding observed',drop:'Drop observed in this window','cached-drop':'Cached drop evidence',gap:'Receipt unobserved across repeated collections','source-only':'Source observed · receipt unobserved','receiver-only':'Receiver observed · source unobserved',partial:'Partial observation coverage',cached:'Cached evidence · no measured activity'};
 const trafficColor=s=>['both','local'].includes(s)?'var(--green)':s==='drop'?'var(--red)':['gap','source-only'].includes(s)?'var(--accent)':'var(--muted)';
 function trafficRate(n){if(n===undefined||n===null)return 'Rate unavailable';let v=n*8,u='b/s';for(const unit of ['kb/s','Mb/s','Gb/s']){if(v<1000)break;v/=1000;u=unit}return `${v.toFixed(v<10?2:1)} ${u}`;}
 function topologyCount(n,label){return `${count(n)} ${label}${n===1?'':'s'}`;}
 function syncTopologyControls(){
  fillSelect($('topology-network'),state.networks.map(n=>({label:`${n.name} · ${n.id}`,value:n.id})),'All networks');
- fillSelect($('topology-node'),state.nodes.map(n=>({label:n.name,value:n.name})),'All nodes');
+ $('topology-node-list').replaceChildren(...state.nodes.map(n=>new Option(n.name,n.name)));
+ $('topology-namespace-list').replaceChildren(...[...new Set(list(state.pods).map(p=>p.namespace).filter(Boolean))].sort().map(n=>new Option(n,n)));
+ if(!topologyState.initialized&&state.nodes.length>100)$('topology-level').value='zones';
  if(!topologyState.initialized&&state.networks.length){$('topology-network').value=state.networks.some(n=>n.id==='default')?'default':state.networks[0].id;topologyState.initialized=true;}
 }
-function topologyQuery(edge){const q=new URLSearchParams();for(const k of ['network','node','level','window','limit'])q.set(k,$('topology-'+k).value);q.set('filter',$('topology-filter').value);q.set('sort',$('topology-filter').value==='drop'?'drops':'rate');if(edge)q.set('edge',edge);return q.toString();}
+function topologyQuery(edge){const q=new URLSearchParams();for(const k of ['network','node','level','window','limit','nodes','nodeSelector','namespace','workload','zone','paths'])q.set(k,$('topology-'+k).value);q.set('filter',$('topology-filter').value);q.set('sort',$('topology-filter').value==='drop'?'drops':'rate');if(edge)q.set('edge',edge);return q.toString();}
 async function loadTopology(force=false){
  if(topologyState.paused&&!force)return;
  const request=++topologyState.request;
  try{
   const g=await api('topology?'+topologyQuery());if(request!==topologyState.request)return;
   topologyState.graph=g;$('updated').textContent='Collected '+new Date(g.collectedAt).toLocaleTimeString();$('topology-errors').replaceChildren();renderTopologyGraph();
-  const partial=topologyPartialPaths(g);$('topology-count').textContent=`${topologyCount(g.edges.length,'observation link')}${partial.groups.length?' · '+topologyCount(partial.groups.length,'partial node path'):''} · ${g.hiddenEdges} hidden · ${topologyCount(g.samples,'collection')}`;
-  $('topology-location').textContent=($('topology-node').value||'Cluster')+' / '+($('topology-level').value==='pods'?'Pods':'Nodes');
-  $('topology-back').classList.toggle('hidden',!$('topology-node').value&&$('topology-level').value==='nodes');
+  const partial=topologyPartialPaths(g);$('topology-count').textContent=`${topologyCount(g.edges.length,'observation link')}${partial.groups.length?' · '+topologyCount(partial.groups.length,'partial node path'):''} · ${g.hiddenEdges} links hidden · ${g.hiddenNodes||0} groups hidden${g.hiddenIssues?' · '+g.hiddenIssues+' issues hidden':''} · ${topologyCount(g.samples,'collection')}`;
+  $('topology-location').textContent=([$('topology-zone').value,$('topology-namespace').value,$('topology-workload').value,$('topology-node').value].filter(Boolean).join(' / ')||'Cluster')+' / '+$('topology-level').selectedOptions[0].textContent;
+  $('topology-back').classList.toggle('hidden',!['node','nodes','nodeSelector','namespace','workload','zone'].some(k=>$('topology-'+k).value)&&$('topology-level').value==='nodes');
   $('topology-coverage').replaceChildren(...list(g.warnings).map(w=>text('p',w)));
   if(topologyState.edge){if(g.edges.some(e=>e.id===topologyState.edge))await inspectTopologyEdge(topologyState.edge);else{topologyState.edge=null;$('topology-detail').replaceChildren(text('h2','The selected link is outside this view'),text('p','Choose another link or adjust the filters.','muted'));}}
  }catch(e){if(request===topologyState.request)$('topology-errors').replaceChildren(text('p',e.message,'error'));}
 }
 function topologySVG(name,attributes){const e=document.createElementNS('http://www.w3.org/2000/svg',name);for(const [k,v]of Object.entries(attributes))e.setAttribute(k,v);return e;}
-function topologyFocus(n){if(!n.node)return;$('topology-node').value=n.node;$('topology-level').value='pods';clearTopologySelection();loadTopology(true);}
+function topologyFocus(n){
+ if(n.group==='zones'){$('topology-zone').value=n.name;$('topology-level').value='nodes';}
+ else if(n.group==='namespaces'){$('topology-namespace').value=n.name;$('topology-level').value='workloads';}
+ else if(n.group==='workloads'){$('topology-workload').value=n.name;$('topology-level').value='pods';}
+ else if(n.node){$('topology-node').value=n.node;$('topology-level').value='pods';}else return;
+ clearTopologySelection();resetTopologyCamera();loadTopology(true);
+}
 // Group by network and node direction only. Sharing a path does not establish
 // that a source-side counter belongs to a particular receiving pod.
 function topologyPartialPaths(g){
@@ -90,10 +98,10 @@ function renderTopologyGraph(){
  const {groups,graph:g}=topologyPartialPaths(topologyState.graph);
  renderTopologyPartialPaths(host,groups);
  if(groups.length&&!g.nodes.length)return;
- const root=text('div','','topology-canvas');host.append(root);
+ const viewport=text('div','','topology-viewport'),root=text('div','','topology-canvas');viewport.tabIndex=0;viewport.setAttribute('aria-label','Topology canvas. Use zoom buttons or mouse wheel to zoom; drag background to pan.');host.append(viewport);viewport.append(root);
  if(!g.nodes.length){root.style.height='auto';root.append(text('div','No matching observed traffic. Generate traffic and allow two collection rounds to measure rates.','empty'));return;}
  const width=host.clientWidth;
- if(width<620){root.style.height='auto';const map=new Map(g.nodes.map(n=>[n.id,n]));
+ if(width<620){viewport.classList.add('topology-list');root.style.height='auto';const map=new Map(g.nodes.map(n=>[n.id,n]));
   for(const e of g.edges){const a=map.get(e.source),b=map.get(e.destination),card=text('article','','topology-mobile-link');card.append(button(`${a.name} → ${b.name}`,()=>inspectTopologyEdge(e.id)),text('p',trafficStatus[e.status],'traffic-'+e.status),text('small',`Observed: ${(e.status==='drop'?count(e.droppedPackets)+' drops':trafficRate(e.sourceBytesPerSecond??e.localBytesPerSecond??e.receiverBytesPerSecond))} · ${e.connections} traffic groups`));if(a.node&&a.node===b.node)card.append(text('small','Same node: '+a.node));if($('topology-level').value==='nodes')card.append(button('Explore pods →',()=>topologyFocus(a)));root.append(card)}
   if(!g.edges.length)for(const n of g.nodes)root.append(button(n.name,()=>topologyFocus(n)));
   return;
@@ -107,7 +115,11 @@ function renderTopologyGraph(){
   for(let i=0;i<entries.length;i+=2){const pair=entries.slice(i,i+2),rows=Math.max(...pair.map(([,ns])=>ns.length));pair.forEach(([name,ns],col)=>{const x=col?width-110:110,label=text('div',name,'topology-group-label');label.style.left=(x-85)+'px';label.style.top=(y+8)+'px';root.append(label);ns.forEach((n,j)=>coords.set(n.id,{x,y:y+90+j*120}));});y+=rows*120+70;}
   height=Math.max(220,y);
  }else ordered.forEach((n,i)=>coords.set(n.id,{x:i%2?width-110:110,y:80+Math.floor(i/2)*160}));
- root.style.height=height+'px';
+ const layoutKey=[$('topology-level').value,$('topology-network').value,$('topology-node').value,$('topology-nodes').value,$('topology-nodeSelector').value,$('topology-namespace').value,$('topology-workload').value,$('topology-zone').value,width].join('|');
+ if(topologyState.layoutKey===layoutKey){let next=Math.max(0,...[...topologyState.positions.values()].map(p=>p.y))+160;for(const n of ordered){const old=topologyState.positions.get(n.id);if(old)coords.set(n.id,old);else{coords.set(n.id,{x:110,y:next});next+=160;}}height=Math.max(height,...[...coords.values()].map(p=>p.y+100));}
+ else{topologyState.layoutKey=layoutKey;topologyState.positions=new Map();}
+ for(const [id,p]of coords)topologyState.positions.set(id,p);if(topologyState.positions.size>500)topologyState.positions=new Map(coords);
+ root.style.height=height+'px';root.style.width=width+'px';
  const svg=topologySVG('svg',{width,height,role:'img','aria-label':'Directed observed traffic links. Use the labeled link buttons to inspect evidence.'});svg.classList.add('topology-wires');root.append(svg);
  const links=[],obstacles=[];
  for(const e of g.edges){const a=coords.get(e.source),b=coords.get(e.destination),color=trafficColor(e.status);let d;
@@ -122,7 +134,7 @@ function renderTopologyGraph(){
    if(reciprocal){const dx=x2-x1,dy=b.y-a.y,length=Math.hypot(dx,dy)||1,ox=dy/length*55,oy=-dx/length*55;d=`M ${x1} ${a.y} C ${x1+dx/3+ox} ${a.y+dy/3+oy},${x1+dx*2/3+ox} ${a.y+dy*2/3+oy},${x2} ${b.y}`;}
   }
   const line=topologySVG('path',{d,fill:'none',stroke:color,'stroke-width':Math.max(2,Math.min(7,2+Math.log10(1+(e.sourceBytesPerSecond||e.localBytesPerSecond||0)/1000)))});line.classList.add('topology-link');line.dataset.topologyEdge=e.id;if(!['both','local','drop'].includes(e.status))line.setAttribute('stroke-dasharray','6 6');svg.append(line);
-  const hit=topologySVG('path',{d,fill:'none',stroke:'transparent','stroke-width':22});hit.classList.add('topology-hit');hit.onclick=()=>inspectTopologyEdge(e.id);svg.append(hit);
+  const hit=topologySVG('path',{d,fill:'none',stroke:'transparent','stroke-width':22});hit.classList.add('topology-hit');hit.onclick=()=>inspectTopologyEdge(e.id);svg.append(hit);hit.onpointerenter=()=>root.querySelector(`[data-topology-edge="${e.id}"].topology-edge`)?.classList.add('hovered');hit.onpointerleave=()=>root.querySelector(`[data-topology-edge="${e.id}"].topology-edge`)?.classList.remove('hovered');
   const length=line.getTotalLength(),end=line.getPointAtLength(Math.max(0,length-5)),previous=line.getPointAtLength(Math.max(0,length-17)),angle=Math.atan2(end.y-previous.y,end.x-previous.x);
   const arrow=topologySVG('polygon',{points:`${end.x},${end.y} ${end.x-10*Math.cos(angle-.5)},${end.y-10*Math.sin(angle-.5)} ${end.x-10*Math.cos(angle+.5)},${end.y-10*Math.sin(angle+.5)}`,fill:color});svg.append(arrow);
   if(e.status==='drop'){
@@ -132,8 +144,9 @@ function renderTopologyGraph(){
   }
   const label=button(`${e.status==='drop'?'× ':['gap','source-only'].includes(e.status)?'? ':''}${(e.status==='drop'?count(e.droppedPackets)+' drops':trafficRate(e.sourceBytesPerSecond??e.localBytesPerSecond??e.receiverBytesPerSecond))} · ${e.connections}`,()=>inspectTopologyEdge(e.id),'secondary topology-edge');label.title=`${trafficStatus[e.status]} · ${networkName(e.network)}`;label.setAttribute('aria-label',`${g.nodes.find(n=>n.id===e.source).name} to ${g.nodes.find(n=>n.id===e.destination).name}: ${trafficStatus[e.status]}`);label.dataset.topologyEdge=e.id;label.setAttribute('aria-pressed',String(topologyState.edge===e.id));const sourceNode=g.nodes.find(n=>n.id===e.source).node;if(sourceNode&&sourceNode===g.nodes.find(n=>n.id===e.destination).node)label.title+=' · Same node: '+sourceNode;root.append(label);links.push({line,label});
  }
- for(const n of ordered){const c=coords.get(n.id),b=button('',()=>n.endpoint?showTopologyPod(n):topologyFocus(n),'secondary topology-node');b.replaceChildren(text('strong',n.name),text('small',n.endpoint?`${n.endpoint.ip||'Address unresolved'}`:`${n.pods} pods · ${networkName(n.network)}`),text('small',n.endpoint?networkName(n.endpoint.network):n.node?'Explore pods →':'Inspect attached links','accent'));b.style.left=c.x+'px';b.style.top=c.y+'px';root.append(b);obstacles.push({left:c.x-b.offsetWidth/2,right:c.x+b.offsetWidth/2,top:c.y-b.offsetHeight/2,bottom:c.y+b.offsetHeight/2});}
+ for(const n of ordered){const c=coords.get(n.id),b=button('',()=>n.endpoint?showTopologyPod(n):topologyFocus(n),'secondary topology-node');b.replaceChildren(text('strong',n.name),text('small',n.endpoint?`${n.endpoint.ip||'Address unresolved'}`:`${n.pods} pods · ${networkName(n.network)}`),text('small',n.endpoint?networkName(n.endpoint.network):n.group?'Explore group →':n.node?'Explore pods →':'Inspect attached links','accent'));b.style.left=c.x+'px';b.style.top=c.y+'px';root.append(b);obstacles.push({left:c.x-b.offsetWidth/2,right:c.x+b.offsetWidth/2,top:c.y-b.offsetHeight/2,bottom:c.y+b.offsetHeight/2});}
  placeTopologyLabels(links,obstacles,width,height);
+ setupTopologyCamera(viewport,root);
 }
 // Position labels on the rendered curve. When labels compete for space, move
 // along their own paths so they remain attached after a resize or filter change.
@@ -194,7 +207,7 @@ function renderTrafficHistory(root,points){
  for(const [label,x,y,anchor]of [[trafficRate(max),15,15,'start'],[new Date(start).toLocaleTimeString(),15,140,'start'],[new Date(end).toLocaleTimeString(),width-15,140,'end']]){const t=topologySVG('text',{x,y,'text-anchor':anchor,fill:'var(--muted)','font-size':11});t.textContent=label;svg.append(t)}root.append(svg,text('p','Source rate — amber · Receiver rate — green','note'));
 }
 function clearTopologySelection(){topologyState.edge=null;topologyState.connection=null;$('topology-detail').replaceChildren(text('h2','Select traffic to inspect'),text('p','Inspect protocols, observed rates and drop evidence.','muted'));}
-for(const id of ['network','filter','window','level','node','limit'])$('topology-'+id).onchange=()=>{clearTopologySelection();loadTopology(true);};
-$('topology-back').onclick=()=>{$('topology-node').value='';$('topology-level').value='nodes';clearTopologySelection();loadTopology(true);};
+for(const id of ['network','filter','window','level','node','limit','nodes','nodeSelector','namespace','workload','zone','paths'])$('topology-'+id).onchange=()=>{clearTopologySelection();resetTopologyCamera();loadTopology(true);};
+$('topology-back').onclick=()=>{for(const id of ['node','nodes','nodeSelector','namespace','workload','zone'])$('topology-'+id).value='';$('topology-level').value=state.nodes.length>100?'zones':'nodes';clearTopologySelection();resetTopologyCamera();loadTopology(true);};
 $('topology-pause').onclick=()=>{topologyState.paused=!topologyState.paused;$('topology-pause').textContent=topologyState.paused?'Resume updates':'Pause updates';if(!topologyState.paused)loadTopology(true);};
 let topologyWidth=0;new ResizeObserver(()=>{const width=$('topology-graph').clientWidth;if(width>0&&Math.abs(width-topologyWidth)>2){topologyWidth=width;renderTopologyGraph();}}).observe($('topology-graph'));

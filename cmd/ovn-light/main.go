@@ -19,6 +19,7 @@ import (
 	"github.com/trozet/ovn-light/internal/kube"
 	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/web"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 var version = "dev"
@@ -46,6 +47,7 @@ func run() error {
 	sbdb := fs.String("sb-db", "unix:/var/run/ovn/ovnsb_db.sock", "OVN SB database address accessible inside the controller container")
 	interval := fs.Duration("interval", 30*time.Second, "Time between completed collection attempts")
 	maxDetraces := fs.Int("max-detraces", 64, "Maximum UFID translation lookups per node per collection")
+	nodeSelector := fs.String("collection-node-selector", "", "Inspect only nodes matching this Kubernetes label selector; inventory remains cluster-wide")
 	concurrency := fs.Int("collection-concurrency", 3, "Maximum concurrent node collections (1–16)")
 	metadataTTL := fs.Duration("metadata-cache-ttl", time.Minute, "Maximum age of cached OVN tables and translations (5s–5m)")
 	offloadGrace := fs.Duration("offload-grace", time.Minute, "Minimum sustained software activity before an offload issue (30s–10m)")
@@ -71,6 +73,9 @@ func run() error {
 	}
 	if *maxDetraces < 1 || *maxDetraces > 1024 {
 		return fmt.Errorf("max-detraces must be between 1 and 1024")
+	}
+	if _, err := labels.Parse(*nodeSelector); err != nil {
+		return fmt.Errorf("invalid collection-node-selector: %w", err)
 	}
 	if *concurrency < 1 || *concurrency > 16 {
 		return fmt.Errorf("collection-concurrency must be 1–16")
@@ -109,7 +114,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		collector = &kube.Collector{RoutingEnabled: true, Client: client, Namespace: *namespace, NBDB: *nbdb, SBDB: *sbdb, MaxDetraces: *maxDetraces, Concurrency: *concurrency, CacheTTL: *metadataTTL}
+		collector = &kube.Collector{NodeSelector: *nodeSelector, RoutingEnabled: true, Client: client, Namespace: *namespace, NBDB: *nbdb, SBDB: *sbdb, MaxDetraces: *maxDetraces, Concurrency: *concurrency, CacheTTL: *metadataTTL}
 	}
 	if command == "capture" {
 		if collector != nil {

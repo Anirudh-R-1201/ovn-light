@@ -41,6 +41,38 @@ func TestTopologyAuthenticationAndBounds(t *testing.T) {
 	}
 }
 
+func TestQoSAuthenticationAndReview(t *testing.T) {
+	a, _ := app.New("demo", "", nil, nil, false)
+	a.Load(app.Demo())
+	h := Handler(a, "secret")
+	for _, path := range []string{"/api/qos", "/api/qos?limit=101", "/api/qos?offset=-1"} {
+		r := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 401 {
+			t.Fatal("QoS bypassed auth")
+		}
+		r.Header.Set("Authorization", "Bearer secret")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		want := 200
+		if path != "/api/qos" {
+			want = 400
+		}
+		if w.Code != want {
+			t.Fatal(path, w.Code, w.Body.String())
+		}
+	}
+	r := httptest.NewRequest("POST", "http://example.com/api/qos/plans", strings.NewReader(`{"kind":"NetworkQoS","namespace":"storefront","name":"web-egress","uid":"demo-qos","rule":0,"dscp":24}`))
+	r.Header.Set("Authorization", "Bearer secret")
+	r.Header.Set("Origin", "http://evil.example")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 403 {
+		t.Fatal("QoS review bypassed origin checks")
+	}
+}
+
 func TestAuthAndOrigin(t *testing.T) {
 	a, e := app.New("demo", "", nil, nil, false)
 	if e != nil {

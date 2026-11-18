@@ -46,6 +46,7 @@ type ObjectRef struct {
 	SpecHash  string `json:"specHash"`
 }
 type Plan struct {
+	QoSChange             *QoSChange                  `json:"qosChange,omitempty"`
 	ID                    string                      `json:"id"`
 	Kind                  string                      `json:"kind"`
 	Scope                 *Scope                      `json:"scope,omitempty"`

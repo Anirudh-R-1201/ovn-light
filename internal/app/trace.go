@@ -8,6 +8,7 @@ import (
 
 	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/ovn"
+	"github.com/trozet/ovn-light/internal/qos"
 	trace "github.com/trozet/ovn-light/internal/trace"
 )
 
@@ -48,7 +49,24 @@ func (a *App) Simulate(ctx context.Context, r trace.Request) (trace.Report, erro
 	if err != nil {
 		return trace.Report{}, err
 	}
-	return a.Collector.Simulate(ctx, inv, r)
+	report, err := a.Collector.Simulate(ctx, inv, r)
+	s := a.Snapshot()
+	s.Inventory = inv
+	for _, p := range qos.Analyze(s).Policies {
+		for _, e := range p.Targets {
+			if e.UID == report.Request.Source.UID && e.Network == report.Request.Source.Network {
+				p.Targets = nil
+				p.Programs = p.Programs[:min(30, len(p.Programs))]
+				report.QoS = append(report.QoS, p)
+				break
+			}
+		}
+		if len(report.QoS) >= 30 {
+			report.Warnings = append(report.Warnings, "QoS context limited to 30 source policies; use the QoS page for full inventory.")
+			break
+		}
+	}
+	return report, err
 }
 
 func (a *App) TraceCheck(ctx context.Context, kind string, r trace.Request, dns trace.Check) (trace.CheckResult, error) {

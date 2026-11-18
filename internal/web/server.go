@@ -17,9 +17,11 @@ import (
 	"github.com/trozet/ovn-light/internal/app"
 	"github.com/trozet/ovn-light/internal/offload"
 	"github.com/trozet/ovn-light/internal/policy"
+	"github.com/trozet/ovn-light/internal/qos"
 	"github.com/trozet/ovn-light/internal/routing"
 	"github.com/trozet/ovn-light/internal/topology"
 	trace "github.com/trozet/ovn-light/internal/trace"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 //go:embed assets/*
@@ -60,7 +62,7 @@ func Handler(a *app.App, token string) http.Handler {
 	mux.HandleFunc("GET /api/offload", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		for _, field := range []string{"node", "network", "status", "search", "id"} {
-			if len(q.Get(field)) > 256 {
+			if len(q.Get(field)) > 4096 {
 				respond(w, nil, fmt.Errorf("%s filter is too long", field))
 				return
 			}
@@ -114,8 +116,8 @@ func Handler(a *app.App, token string) http.Handler {
 	})
 	mux.HandleFunc("GET /api/topology", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		for _, field := range []string{"network", "node", "edge"} {
-			if len(q.Get(field)) > 256 {
+		for _, field := range []string{"network", "node", "edge", "nodes", "nodeSelector", "namespace", "workload", "zone", "paths"} {
+			if len(q.Get(field)) > 4096 {
 				respond(w, nil, fmt.Errorf("%s filter is too long", field))
 				return
 			}
@@ -136,12 +138,51 @@ func Handler(a *app.App, token string) http.Handler {
 				return
 			}
 		}
-		if level := q.Get("level"); level != "" && level != "nodes" && level != "pods" {
-			respond(w, nil, fmt.Errorf("level must be nodes or pods"))
+		if level := q.Get("level"); level != "" && !topology.ValidLevel(level) {
+			respond(w, nil, fmt.Errorf("invalid topology detail level"))
 			return
 		}
-		o := topology.Options{Network: q.Get("network"), Node: q.Get("node"), Level: q.Get("level"), Filter: q.Get("filter"), Sort: q.Get("sort"), Edge: q.Get("edge"), Window: time.Duration(window) * time.Second, Limit: limit}
+		if _, err := labels.Parse(q.Get("nodeSelector")); err != nil {
+			respond(w, nil, fmt.Errorf("invalid node label selector: %w", err))
+			return
+		}
+		o := topology.Options{Nodes: q.Get("nodes"), NodeSelector: q.Get("nodeSelector"), Namespace: q.Get("namespace"), Workload: q.Get("workload"), Zone: q.Get("zone"), Paths: q.Get("paths"), Network: q.Get("network"), Node: q.Get("node"), Level: q.Get("level"), Filter: q.Get("filter"), Sort: q.Get("sort"), Edge: q.Get("edge"), Window: time.Duration(window) * time.Second, Limit: limit}
 		respond(w, a.Topology(o), nil)
+	})
+	mux.HandleFunc("GET /api/qos", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		offset, limit := 0, 25
+		for _, field := range []string{"network", "node", "namespace", "search"} {
+			if len(q.Get(field)) > 256 {
+				respond(w, nil, fmt.Errorf("QoS filter is too long"))
+				return
+			}
+		}
+		var err error
+		if q.Has("offset") {
+			offset, err = strconv.Atoi(q.Get("offset"))
+			if err != nil || offset < 0 || offset > 100000 {
+				respond(w, nil, fmt.Errorf("offset must be 0–100000"))
+				return
+			}
+		}
+		if q.Has("limit") {
+			limit, err = strconv.Atoi(q.Get("limit"))
+			if err != nil || limit < 1 || limit > 100 {
+				respond(w, nil, fmt.Errorf("limit must be 1–100"))
+				return
+			}
+		}
+		respond(w, a.QoS(qos.Options{Network: q.Get("network"), Node: q.Get("node"), Namespace: q.Get("namespace"), Search: q.Get("search"), Offset: offset, Limit: limit}), nil)
+	})
+	mux.HandleFunc("POST /api/qos/plans", func(w http.ResponseWriter, r *http.Request) {
+		var request policy.QoSRequest
+		if err := decode(w, r, &request); err != nil {
+			respond(w, nil, err)
+			return
+		}
+		p, err := a.PrepareQoS(r.Context(), request)
+		respond(w, p, err)
 	})
 	mux.HandleFunc("GET /api/plans", func(w http.ResponseWriter, r *http.Request) { respond(w, a.Plans(), nil) })
 	mux.HandleFunc("GET /api/snapshot", func(w http.ResponseWriter, r *http.Request) {

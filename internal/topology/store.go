@@ -16,9 +16,10 @@ const MaxFrames = 60
 const Retention = 10 * time.Minute
 
 type Options struct {
-	Network, Node, Level, Filter, Sort, Edge string
-	Window                                   time.Duration
-	Limit                                    int
+	Network, Node, Level, Filter, Sort, Edge              string
+	Nodes, NodeSelector, Namespace, Workload, Zone, Paths string
+	Window                                                time.Duration
+	Limit                                                 int
 }
 type Counters struct {
 	Packets   uint64    `json:"packets"`
@@ -64,6 +65,7 @@ type Node struct {
 	Network  string          `json:"network"`
 	Pods     int             `json:"pods"`
 	Endpoint *model.Endpoint `json:"endpoint,omitempty"`
+	Group    string          `json:"group,omitempty"`
 }
 type Edge struct {
 	ID             string       `json:"id"`
@@ -87,6 +89,9 @@ type Graph struct {
 	Edges               []Edge    `json:"edges"`
 	TotalEdges          int       `json:"totalEdges"`
 	HiddenEdges         int       `json:"hiddenEdges"`
+	TotalNodes          int       `json:"totalNodes"`
+	HiddenNodes         int       `json:"hiddenNodes"`
+	HiddenIssues        int       `json:"hiddenIssues"`
 	Truncated           bool      `json:"truncated"`
 	Warnings            []string  `json:"warnings"`
 	RetainedConnections int       `json:"retainedConnections"`
@@ -101,15 +106,16 @@ type frame struct {
 // Store keeps bounded aggregates, not raw dumps or packet logs. Its owner
 // serializes updates and snapshots; a slow browser never queues collection work.
 type Store struct {
-	frames []frame
-	nodes  []model.NodeStatus
-	pods   []model.Endpoint
+	frames   []frame
+	nodes    []model.NodeStatus
+	pods     []model.Endpoint
+	metadata inventory
 }
 
 // Frames and inventory are immutable after Update publishes them. Copying the
 // frame slice lets API queries run without holding the app's state lock.
 func (s *Store) Snapshot() Store {
-	return Store{frames: append([]frame{}, s.frames...), nodes: s.nodes, pods: s.pods}
+	return Store{frames: append([]frame{}, s.frames...), nodes: s.nodes, pods: s.pods, metadata: s.metadata}
 }
 
 func id(parts ...string) string {
@@ -291,6 +297,7 @@ func status(c Connection, healthy bool) string {
 func (s *Store) connections(o Options, now time.Time) (map[string]Connection, bool) {
 	all := map[string]Connection{}
 	truncated := false
+	match := s.matcher(o)
 	for _, f := range s.frames {
 		if f.at.Before(now.Add(-o.Window)) {
 			continue
@@ -303,7 +310,7 @@ func (s *Store) connections(o Options, now time.Time) (map[string]Connection, bo
 			}
 		}
 		for k, b := range f.connections {
-			if o.Network != "" && b.Network != o.Network || o.Node != "" && b.Source.Node != o.Node && b.Destination.Node != o.Node {
+			if o.Network != "" && b.Network != o.Network || !match(b.Source, b.Destination) {
 				continue
 			}
 			c, ok := all[k]
@@ -415,7 +422,7 @@ func (s *Store) Graph(o Options, now time.Time) Graph {
 	if o.Limit <= 0 || o.Limit > 100 {
 		o.Limit = 40
 	}
-	if o.Level != "pods" {
+	if !ValidLevel(o.Level) {
 		o.Level = "nodes"
 	}
 	g := Graph{Nodes: []Node{}, Edges: []Edge{}, WindowSeconds: int(o.Window.Seconds()), Warnings: []string{}, Samples: len(s.frames)}
@@ -436,7 +443,10 @@ func (s *Store) Graph(o Options, now time.Time) Graph {
 		if o.Filter == "drop" && c.Status != "drop" && c.Status != "cached-drop" || o.Filter == "gap" && c.Status != "gap" && c.Status != "source-only" {
 			continue
 		}
-		a, b := node(c.Source, c.Network, o.Level), node(c.Destination, c.Network, o.Level)
+		a, b := s.group(c.Source, c.Network, o.Level), s.group(c.Destination, c.Network, o.Level)
+		if o.Paths == "issues" && c.Status != "drop" && c.Status != "cached-drop" && c.Status != "gap" {
+			continue
+		}
 		nodes[a.ID], nodes[b.ID] = a, b
 		key := id(c.Network, a.ID, b.ID)
 		e, ok := edges[key]
@@ -469,6 +479,9 @@ func (s *Store) Graph(o Options, now time.Time) Graph {
 	}
 	sort.Slice(g.Edges, func(i, j int) bool {
 		a, b := g.Edges[i], g.Edges[j]
+		if (priority(a.Status) >= 7) != (priority(b.Status) >= 7) {
+			return priority(a.Status) >= 7
+		}
 		if o.Sort == "drops" && a.DroppedPackets != b.DroppedPackets {
 			return a.DroppedPackets > b.DroppedPackets
 		}
@@ -478,29 +491,57 @@ func (s *Store) Graph(o Options, now time.Time) Graph {
 		return a.ID < b.ID
 	})
 	g.TotalEdges = len(g.Edges)
+	g.TotalNodes = len(nodes)
+	if o.Paths == "none" {
+		for _, e := range g.Edges {
+			if priority(e.Status) >= 7 {
+				g.HiddenIssues++
+			}
+		}
+		g.Edges = []Edge{}
+	}
 	if len(g.Edges) > o.Limit {
-		g.HiddenEdges = len(g.Edges) - o.Limit
+		for _, e := range g.Edges[o.Limit:] {
+			if priority(e.Status) >= 7 {
+				g.HiddenIssues++
+			}
+		}
 		g.Edges = g.Edges[:o.Limit]
 	}
+	g.HiddenEdges = g.TotalEdges - len(g.Edges)
 	used := map[string]bool{}
 	for _, e := range g.Edges {
 		used[e.Source] = true
 		used[e.Destination] = true
 	}
 	pods := map[string]map[string]bool{}
+	match := s.matcher(o)
 	for _, p := range s.pods {
-		if o.Network != "" && p.Network != o.Network {
+		if o.Network != "" && p.Network != o.Network || !match(p, p) {
 			continue
 		}
-		n := node(p, p.Network, o.Level)
+		n := s.group(p, p.Network, o.Level)
 		if pods[n.ID] == nil {
 			pods[n.ID] = map[string]bool{}
 		}
 		pods[n.ID][p.UID] = true
-		if len(g.Edges) == 0 && len(used) < 24 && (o.Node == "" || p.Node == o.Node) {
+		if len(g.Edges) == 0 {
 			nodes[n.ID] = n
-			used[n.ID] = true
 		}
+	}
+	if len(g.Edges) == 0 {
+		ids := make([]string, 0, len(nodes))
+		for k := range nodes {
+			ids = append(ids, k)
+		}
+		sort.Strings(ids)
+		for _, k := range ids {
+			if len(used) >= o.Limit {
+				break
+			}
+			used[k] = true
+		}
+		g.TotalNodes = len(nodes)
 	}
 	for k := range used {
 		n := nodes[k]
@@ -508,6 +549,10 @@ func (s *Store) Graph(o Options, now time.Time) Graph {
 		g.Nodes = append(g.Nodes, n)
 	}
 	sort.Slice(g.Nodes, func(i, j int) bool { return g.Nodes[i].ID < g.Nodes[j].ID })
+	g.HiddenNodes = g.TotalNodes - len(g.Nodes)
+	if s.metadata.scope != "" {
+		g.Warnings = append(g.Warnings, s.metadata.scope)
+	}
 	if truncated {
 		g.Warnings = append(g.Warnings, "Traffic history reached its 2,000-connection limit; some observations were omitted.")
 	}

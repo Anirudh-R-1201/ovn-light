@@ -27,7 +27,7 @@ rules:
   resources: [userdefinednetworks, clusteruserdefinednetworks, egressips, routeadvertisements, uplinks, uplinkstates]
   verbs: [get, list]
 - apiGroups: [k8s.ovn.org]
-  resources: [egressfirewalls]
+  resources: [egressfirewalls, networkqoses, egressqoses]
   verbs: [get, list, patch]
 - apiGroups: [k8s.ovn.org]
   resources: [clusternetworkconnects]

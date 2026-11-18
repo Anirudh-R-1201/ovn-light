@@ -23,6 +23,7 @@ type Inventory struct {
 }
 
 type NodeSnapshot struct {
+	QoS            QoSEvidence       `json:"qos"`
 	Routing        RoutingEvidence   `json:"routing"`
 	Offload        OffloadEvidence   `json:"offload"`
 	Name           string            `json:"name"`

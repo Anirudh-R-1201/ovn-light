@@ -14,6 +14,7 @@ import (
 	"github.com/trozet/ovn-light/internal/datapath"
 	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/ovn"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 type Collector struct {
@@ -23,6 +24,7 @@ type Collector struct {
 	Namespace, NBDB, SBDB string
 	MaxDetraces           int
 	Concurrency           int
+	NodeSelector          string
 	CacheTTL              time.Duration
 	captureMu             sync.Mutex
 	cacheMu               sync.Mutex
@@ -34,6 +36,7 @@ type nodeTargets struct{ ovs, ovn, frr Target }
 
 type traceCache struct{ Signature, Text string }
 type nodeCache struct {
+	QoS                                     model.QoSEvidence
 	Key                                     string
 	At                                      time.Time
 	Bindings, Datapaths, LogicalFlows, ACLs []model.Row
@@ -41,32 +44,34 @@ type nodeCache struct {
 	Bytes                                   int
 }
 
+// Status-only updates should not invalidate every node's OVN table cache.
+// Labels, attachment identity and policy specs can change attribution.
 func inventoryKey(inv model.Inventory) string {
 	var versions []string
+	add := func(v any) { b, _ := json.Marshal(v); versions = append(versions, string(b)) }
 	for _, p := range inv.Pods {
-		versions = append(versions, "pod/"+string(p.UID)+"/"+p.ResourceVersion)
+		add([]any{"pod", p.UID, p.Namespace, p.Name, p.Spec.NodeName, p.Spec.HostNetwork, p.Labels, p.Annotations["k8s.ovn.org/pod-networks"], p.Annotations["k8s.v1.cni.cncf.io/network-status"], p.DeletionTimestamp})
 	}
 	for _, p := range inv.Policies {
-		versions = append(versions, "policy/"+string(p.UID)+"/"+p.ResourceVersion)
+		add([]any{"policy", p.UID, p.Namespace, p.Spec})
 	}
 	for _, svc := range inv.Services {
-		versions = append(versions, "service/"+string(svc.UID)+"/"+svc.ResourceVersion)
+		add([]any{"service", svc.UID, svc.Spec})
 	}
-	for _, p := range inv.Namespaces {
-		versions = append(versions, "ns/"+string(p.UID)+"/"+p.ResourceVersion)
+	for _, n := range inv.Namespaces {
+		add([]any{"namespace", n.UID, n.Name, n.Labels})
 	}
 	for kind, resources := range inv.Resources {
-		if _, diagnostic := DiagnosticResources[kind]; diagnostic {
+		if _, diagnostic := DiagnosticResources[kind]; diagnostic && kind != "networkqoses" && kind != "egressqoses" {
 			continue
 		}
 		for _, r := range resources {
-			versions = append(versions, kind+"/"+string(r.GetUID())+"/"+r.GetResourceVersion())
+			add([]any{kind, r.GetUID(), r.GetNamespace(), r.GetName(), r.GetLabels(), r.GetAnnotations(), r.GetOwnerReferences(), r.Object["spec"]})
 		}
 	}
 	sort.Strings(versions)
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(versions, "\n"))))
 }
-
 func (c *Collector) cached(name, key string) nodeCache {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
@@ -118,9 +123,22 @@ func (c *Collector) Capture(ctx context.Context) (model.Snapshot, error) {
 	}
 	s.Inventory = inv
 	key := inventoryKey(inv)
+	selector, err := labels.Parse(c.NodeSelector)
+	if err != nil {
+		return s, fmt.Errorf("invalid collection node selector: %w", err)
+	}
+	selected := map[string]bool{}
+	for _, node := range inv.Nodes {
+		if selector.Matches(labels.Set(node.Labels)) {
+			selected[node.Name] = true
+		}
+	}
+	if c.NodeSelector != "" {
+		s.Inventory.DiagnosticErrors["collectionScope"] = "Datapath collection is scoped to nodes matching " + c.NodeSelector
+	}
 	targets := map[string]nodeTargets{}
 	for _, p := range inv.Pods {
-		if p.Namespace != c.Namespace || p.Spec.NodeName == "" || p.DeletionTimestamp != nil {
+		if p.Namespace != c.Namespace || p.Spec.NodeName == "" || p.DeletionTimestamp != nil || c.NodeSelector != "" && !selected[p.Spec.NodeName] {
 			continue
 		}
 		t := targets[p.Spec.NodeName]
@@ -149,37 +167,42 @@ func (c *Collector) Capture(ctx context.Context) (model.Snapshot, error) {
 	if concurrency <= 0 {
 		concurrency = 3
 	}
-	sem := make(chan struct{}, concurrency)
-	snapshotBytes := 0
+	names := make([]string, 0, len(targets))
 	for name, t := range targets {
-		if t.ovs.Pod == "" && t.ovn.Pod == "" {
-			continue
+		if t.ovs.Pod != "" || t.ovn.Pod != "" {
+			names = append(names, name)
 		}
+	}
+	sort.Strings(names)
+	jobs := make(chan string, len(names))
+	for _, name := range names {
+		jobs <- name
+	}
+	close(jobs)
+	snapshotBytes := 0
+	// A fixed worker pool bounds both command concurrency and waiting goroutines.
+	for range min(concurrency, len(names)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
+			for name := range jobs {
+				var n model.NodeSnapshot
+				if ctx.Err() != nil {
+					n = model.NodeSnapshot{Name: name, CapturedAt: time.Now().UTC(), Errors: []string{"Collection deadline reached before this node could be inspected."}}
+				} else {
+					n = c.captureNode(ctx, name, targets[name], key)
+				}
+				encoded, _ := json.Marshal(n)
 				mu.Lock()
-				s.Nodes = append(s.Nodes, model.NodeSnapshot{Name: name, CapturedAt: time.Now().UTC(), Errors: []string{"Collection deadline reached before this node could be inspected."}})
+				if snapshotBytes+len(encoded) > 64<<20 {
+					n = model.NodeSnapshot{Name: name, CapturedAt: n.CapturedAt, Collection: n.Collection, Errors: []string{"Snapshot size limit reached; this node's evidence was omitted."}}
+					n.Collection.FlowComplete = false
+				} else {
+					snapshotBytes += len(encoded)
+				}
+				s.Nodes = append(s.Nodes, n)
 				mu.Unlock()
-				return
 			}
-			defer func() { <-sem }()
-			n := c.captureNode(ctx, name, t, key)
-			mu.Lock()
-			// Raw snapshots are retained for evidence, so their total size must
-			// stay bounded even when many nodes finish a large dump together.
-			encoded, _ := json.Marshal(n)
-			if snapshotBytes+len(encoded) > 64<<20 {
-				n = model.NodeSnapshot{Name: name, CapturedAt: n.CapturedAt, Collection: n.Collection, Errors: []string{"Snapshot size limit reached; this node's evidence was omitted."}}
-				n.Collection.FlowComplete = false
-			} else {
-				snapshotBytes += len(encoded)
-			}
-			s.Nodes = append(s.Nodes, n)
-			mu.Unlock()
 		}()
 	}
 	wg.Wait()
@@ -255,7 +278,7 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 		}
 		return rows
 	}
-	n.Interfaces = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=_uuid,name,ofport,external_ids,type,options,status,error,link_state,mtu,statistics", "list", "Interface")
+	n.Interfaces = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=_uuid,name,ofport,external_ids,type,options,status,error,link_state,mtu,statistics,ingress_policing_rate,ingress_policing_burst", "list", "Interface")
 	n.Offload = c.captureOffload(ctx, name, t.ovs, execute)
 	key += fmt.Sprintf("/%v/%v", t.ovs, t.ovn)
 	cached := c.cached(name, key)
@@ -270,11 +293,13 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 		cached.Datapaths = table(t.ovn, "ovn-sbctl", "--timeout=10", "--db="+c.SBDB, "--format=json", "--columns=_uuid,tunnel_key,external_ids", "list", "Datapath_Binding")
 		cached.LogicalFlows = table(t.ovn, "ovn-sbctl", "--timeout=10", "--db="+c.SBDB, "--format=json", "--columns=_uuid,external_ids,match,actions", "list", "Logical_Flow")
 		cached.ACLs = table(t.ovn, "ovn-nbctl", "--timeout=10", "--db="+c.NBDB, "--format=json", "--columns=_uuid,external_ids,action,match,direction,priority", "list", "ACL")
+		cached.QoS = captureQoS(t, c.NBDB, execute)
 		cached.Bytes = n.Collection.Bytes - beforeBytes
 		if len(n.Errors) == beforeErrors && ctx.Err() == nil && t.ovn.Pod != "" {
 			cached.At = time.Now().UTC()
 		}
 	}
+	n.QoS = cached.QoS
 	n.Bindings, n.Datapaths, n.LogicalFlows, n.ACLs, n.MetadataAt = cached.Bindings, cached.Datapaths, cached.LogicalFlows, cached.ACLs, cached.At
 	flows, parseErrors := datapath.Parse(n.Flows)
 	if len(parseErrors) > 0 {

@@ -222,3 +222,5 @@ Collection, reconstruction, policy planning and the backend are Go. The embedded
 GitHub Actions runs Go race/vet checks, browser tests, and eight isolated KIND integration lanes: CDN, primary UDN plus ClusterNetworkConnect, secondary MultiNetworkPolicy, EgressFirewall, cross-node topology, ANP/BANP, EgressIP failover, and BGP/uplinks. Each deploys OVN-Kubernetes and OVN-Light and checks the corresponding evidence against real enforcement, traffic or routing state. Policy lanes exercise proposal/apply/rollback through the API. See [CI and local reproduction](docs/testing.md#continuous-integration).
 
 Licensed under Apache-2.0. See [LICENSE](LICENSE).
+
+See [QoS inspection and reviewed changes](docs/qos.md) and [topology navigation and scale limits](docs/topology-navigation.md).

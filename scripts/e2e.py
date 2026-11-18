@@ -104,7 +104,7 @@ class Harness:
         assert report['results'][0]['segments'][0].get('ovs'), 'Missing source OVS trace'
         if not allowed:
             assert any(c['type'] == 'NetpolNamespace'
-                       for segment in report['results'][0]['segments'] for c in segment['causes']), report
+                       for segment in report['results'][0]['segments'] for c in (segment['causes'] or [])), report
         if self.args.lane == 'topology':
             assert len(report['results'][0]['segments']) >= 2, report
             return

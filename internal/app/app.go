@@ -20,6 +20,7 @@ import (
 	"github.com/trozet/ovn-light/internal/offload"
 	"github.com/trozet/ovn-light/internal/ovn"
 	"github.com/trozet/ovn-light/internal/policy"
+	"github.com/trozet/ovn-light/internal/qos"
 	"github.com/trozet/ovn-light/internal/routing"
 	"github.com/trozet/ovn-light/internal/topology"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,6 +28,7 @@ import (
 )
 
 type App struct {
+	qos           qos.Report
 	routing       routing.Report
 	OffloadGrace  time.Duration
 	offload       offload.Store
@@ -93,7 +95,11 @@ func (a *App) Load(s model.Snapshot) {
 	}
 	a.mu.RUnlock()
 	v := ovn.Analyze(s, previous)
+	if scope := s.Inventory.DiagnosticErrors["collectionScope"]; scope != "" {
+		v.Errors = append(v.Errors, scope)
+	}
 	report := routing.Analyze(s, v, &a.routing)
+	qosReport := qos.Analyze(s)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.offload.Grace = a.OffloadGrace
@@ -105,6 +111,8 @@ func (a *App) Load(s model.Snapshot) {
 	v.Offload = model.OffloadReport{}
 	a.snapshot = s
 	a.routing = report
+	a.qos = qosReport
+	a.topology.Inventory(s.Inventory)
 	a.topology.Update(v)
 	v.Traffic = nil
 	a.view = v
@@ -369,6 +377,9 @@ func (a *App) Apply(ctx context.Context, id string) (policy.Plan, error) {
 	}
 	p.Status = "applied"
 	p.Verification = "Applied; connectivity has not been verified."
+	if p.QoSChange != nil {
+		p.Verification = "Applied; refresh QoS to inspect OVN convergence. Packet treatment has not been verified."
+	}
 	err = a.persist(p)
 	return clonePlan(p), err
 }
@@ -393,12 +404,14 @@ func (a *App) Rollback(ctx context.Context, id string) (policy.Plan, error) {
 		index := len(p.Applied) - 1
 		ref := p.Applied[index]
 		var err error
-		if p.FirewallChange != nil {
+		if p.QoSChange != nil {
+			err = a.Client.RollbackQoS(ctx, p.QoSChange, ref)
+		} else if p.FirewallChange != nil {
 			err = a.Client.RollbackFirewall(ctx, p.FirewallChange, ref)
 		} else {
 			err = a.Client.Rollback(ctx, ref, p.ID)
 		}
-		if err != nil && (p.FirewallChange != nil || !apierrors.IsNotFound(err)) {
+		if err != nil && (p.FirewallChange != nil || p.QoSChange != nil || !apierrors.IsNotFound(err)) {
 			p.Status = "rollback-failed"
 			_ = a.persist(p)
 			return clonePlan(p), err
@@ -410,6 +423,9 @@ func (a *App) Rollback(ctx context.Context, id string) (policy.Plan, error) {
 	}
 	p.Status = "rolled-back"
 	p.Verification = "Created resources were removed. Previous policy behavior should return after OVN converges."
+	if p.QoSChange != nil {
+		p.Verification = "Previous QoS spec restored. Refresh QoS to inspect convergence."
+	}
 	if p.FirewallChange != nil {
 		p.Verification = "The inserted allow rule was removed; the existing EgressFirewall was preserved. Verify denial after OVN converges."
 	}
@@ -418,6 +434,9 @@ func (a *App) Rollback(ctx context.Context, id string) (policy.Plan, error) {
 }
 
 func (a *App) writeObject(ctx context.Context, p *policy.Plan, o unstructured.Unstructured, dryRun bool) (*unstructured.Unstructured, error) {
+	if p.QoSChange != nil {
+		return a.Client.PatchQoS(ctx, p.QoSChange, o, dryRun)
+	}
 	if p.FirewallChange != nil {
 		return a.Client.PatchFirewall(ctx, p.FirewallChange, o, dryRun)
 	}

@@ -13,6 +13,8 @@ import (
 )
 
 var DiagnosticResources = map[string]schema.GroupVersionResource{
+	"networkqoses":        {Group: "k8s.ovn.org", Version: "v1alpha1", Resource: "networkqoses"},
+	"egressqoses":         {Group: "k8s.ovn.org", Version: "v1", Resource: "egressqoses"},
 	"egressips":           {Group: "k8s.ovn.org", Version: "v1", Resource: "egressips"},
 	"routeadvertisements": {Group: "k8s.ovn.org", Version: "v1", Resource: "routeadvertisements"},
 	"uplinks":             {Group: "k8s.ovn.org", Version: "v1alpha1", Resource: "uplinks"},

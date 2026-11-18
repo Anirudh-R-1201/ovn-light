@@ -12,9 +12,11 @@ check:
 	node --check internal/web/assets/issues.js
 	node --check internal/web/assets/app.js
 	node --check internal/web/assets/topology.js
+	node --check internal/web/assets/topology-camera.js
 	node --check internal/web/assets/offload.js
 	node --check internal/web/assets/routing.js
 	node --check internal/web/assets/trace.js
+	node --check internal/web/assets/qos.js
 demo:
 	$(GO) run ./cmd/ovn-light --demo
 image: build

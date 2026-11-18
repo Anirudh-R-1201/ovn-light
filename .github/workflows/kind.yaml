@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [cdn, udn, secondary, egress, topology, admin, egressip, routing]
+        lane: [cdn, udn, secondary, egress, topology, admin, egressip, routing, qos]
     env:
       LANE: ${{ matrix.lane }}
       KIND_CLUSTER: ovn-light-ci

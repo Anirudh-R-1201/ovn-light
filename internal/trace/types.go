@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/trozet/ovn-light/internal/model"
+	"github.com/trozet/ovn-light/internal/qos"
 	core "k8s.io/api/core/v1"
 )
 
@@ -73,12 +74,13 @@ type Result struct {
 }
 
 type Report struct {
-	At       time.Time `json:"at"`
-	Mode     string    `json:"mode"`
-	Request  Request   `json:"request"`
-	Service  *Service  `json:"service,omitempty"`
-	Results  []Result  `json:"results"`
-	Warnings []string  `json:"warnings"`
+	QoS      []qos.Policy `json:"qos,omitempty"`
+	At       time.Time    `json:"at"`
+	Mode     string       `json:"mode"`
+	Request  Request      `json:"request"`
+	Service  *Service     `json:"service,omitempty"`
+	Results  []Result     `json:"results"`
+	Warnings []string     `json:"warnings"`
 }
 
 type Check struct {

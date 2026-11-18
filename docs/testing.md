@@ -217,3 +217,14 @@ The CDN lane also checks pod and Service simulations before allowance, after app
 and after rollback. It verifies OVS trace evidence and real Service TCP/DNS tests.
 The browser suite covers the Trace page, policy review handoff, foreground results
 and mobile layout. Cross-zone pod continuation is exercised in the topology lane.
+
+## QoS and topology navigation
+
+The `qos` KIND matrix lane enables NetworkQoS and runs `scripts/e2e-qos.py` through
+`test-lane.sh`, including before/after OVN configuration and guarded rollback for
+both QoS APIs. See [QoS](qos.md) for the pinned CRD schema workaround. The browser
+suite runs `browser-qos.cjs` for review, zoom, hidden paths and mobile controls.
+
+`go test ./internal/topology -run '^$' -bench BenchmarkTopology2000Nodes -benchmem`
+measures a synthetic 2,000-node graph query; it is not an end-to-end collector load
+test. See [topology navigation](topology-navigation.md) for collection bounds.

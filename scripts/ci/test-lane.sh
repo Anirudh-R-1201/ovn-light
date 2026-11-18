@@ -20,6 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 case "$lane" in
+  qos) fixture=qos; namespaces=(ovn-light-qos) ;;
   topology) fixture=topology; namespaces=(ovn-light-topology) ;;
   cdn) fixture=denied-traffic; namespaces=(ovn-light-demo) ;;
   udn) fixture=user-defined-networks; namespaces=(ovn-light-red ovn-light-blue) ;;
@@ -58,5 +59,9 @@ for _attempt in {1..60}; do
   sleep 1
 done
 [[ -n "$port" ]]
+if [[ "$lane" == qos ]]; then
+  python3 scripts/e2e-qos.py --url "http://127.0.0.1:$port" --token-file "$token_file" --context "$context" --artifacts "$artifacts"
+  exit 0
+fi
 python3 scripts/e2e.py --lane "$lane" --url "http://127.0.0.1:$port" \
   --token-file "$token_file" --context "$context" --artifacts "$artifacts" "${extra_args[@]}"
