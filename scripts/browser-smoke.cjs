@@ -22,7 +22,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   if(await page.locator('#topology-graph').textContent().then(s=>s.includes('catalog-9dd4')))throw new Error('Topology network filter leaked another network');
   await page.setViewportSize({width:390,height:844});
   await page.waitForSelector('.topology-mobile-link');
-  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Topology mobile overflow');
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Topology mobile overflow: '+await page.evaluate(()=>JSON.stringify([...document.querySelectorAll('body *')].filter(e=>getComputedStyle(e).display!=='none'&&e.getBoundingClientRect().right>innerWidth+1).map(e=>({tag:e.tagName,id:e.id,cls:e.className,right:e.getBoundingClientRect().right})).slice(0,15))));
   await page.setViewportSize({width:1440,height:1000});
   await page.locator('[data-page="issues"]').click();
 

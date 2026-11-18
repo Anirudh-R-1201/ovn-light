@@ -28,15 +28,22 @@ def run(h):
 
     for kind, original, changed in [('NetworkQoS', 20, 24), ('EgressQoS', 10, 12)]:
         policy = h.eventually(lambda: inspect(kind, original), timeout=180)
-        plan = h.api('qos/plans', {'kind': kind, 'namespace': namespace,
-                                 'name': policy['name'], 'uid': policy['uid'], 'rule': 0, 'dscp': changed})
+        request = {'kind': kind, 'namespace': namespace, 'name': policy['name'],
+                   'uid': policy['uid'], 'rule': 0, 'dscp': changed}
+        if kind == 'NetworkQoS':
+            request.update(rateKbps=12000, burstKbits=1200)
+        plan = h.api('qos/plans', request)
+        if kind == 'NetworkQoS':
+            assert plan['objects'][0]['spec']['egress'][0]['bandwidth'] == {'rate': 12000, 'burst': 1200}
         assert plan['qosChange']['beforeSpec']['egress'][0]['dscp'] == original
         applied = False
         try:
             result = h.api('plans/' + plan['id'] + '/apply', {})
             applied = True
             assert result['status'] == 'applied', result
-            h.eventually(lambda: inspect(kind, changed), timeout=180)
+            updated = h.eventually(lambda: inspect(kind, changed), timeout=180)
+            if kind == 'NetworkQoS':
+                assert updated['rules'][0]['rateKbps'] == 12000 and updated['rules'][0]['burstKbits'] == 1200
             # This checks ordinary delivery, not DSCP on the wire or policing loss.
             probe = h.kubectl('-n', namespace, 'exec', 'client', '--', '/agnhost',
                               'connect', 'server:8080', '--timeout=3s')

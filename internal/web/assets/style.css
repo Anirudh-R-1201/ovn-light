@@ -30,3 +30,4 @@
 .qos-edit{display:grid;gap:16px;max-width:600px}.qos-edit label{display:grid;gap:8px}.qos-edit input{width:100%}
 
 .topology-viewport.topology-list{height:auto;overflow:visible;touch-action:auto;border:0}.topology-list .topology-canvas{transform:none!important}
+@media(max-width:720px){.rail nav{overflow-x:auto;flex-wrap:nowrap;max-width:100%;padding-bottom:4px}.rail .nav{flex:0 0 auto;white-space:nowrap;padding:10px 12px}.topology-toolbar>*{max-width:100%}}
