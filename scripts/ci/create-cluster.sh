@@ -38,7 +38,9 @@ docker pull "ghcr.io/k8snetworkplumbingwg/multus-cni:$MULTUS_VERSION"
 kind load docker-image --name "$cluster" "ghcr.io/k8snetworkplumbingwg/multus-cni:$MULTUS_VERSION"
 kubectl --context "$context" apply -f "$work_dir/multus.yaml"
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/network-attachment-definitions.k8s.cni.cncf.io crd/multi-networkpolicies.k8s.cni.cncf.io crd/ipamclaims.k8s.cni.cncf.io
-api_ip="$(kubectl --context "$context" get node "$cluster-control-plane" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
+# Docker can assign new node IPs after a host reboot. KIND's node hostname is
+# stable, resolves from OVN's host-network pods, and is in the API certificate.
+api_endpoint="https://$cluster-control-plane:6443"
 features=()
 if [[ "${LANE:-}" == qos ]]; then features+=(--set global.enableNetworkQos=true); fi
 if [[ "${LANE:-}" == admin || "${LANE:-}" == routing ]]; then
@@ -54,7 +56,7 @@ fi
 chart="$work_dir/helm/ovn-kubernetes"
 helm --kube-context "$context" upgrade --install ovn-kubernetes "$chart" --namespace ovn-kubernetes --create-namespace \
   -f "$chart/values-single-node-zone.yaml" \
-  --set "k8sAPIServer=https://$api_ip:6443" \
+  --set "k8sAPIServer=$api_endpoint" \
   --set global.image.repository=ovn-light-ci-ovn --set "global.image.tag=$OVN_REVISION" \
   --set global.image.pullPolicy=IfNotPresent --set global.enableOvnKubeIdentity=false \
   --set global.enableMultiNetwork=true --set global.enableNetworkSegmentation=true \
