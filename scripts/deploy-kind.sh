@@ -4,6 +4,11 @@ cd "$(dirname "$0")/.."
 cluster="${1:-ovn}"
 image="${IMAGE:-ovn-light:dev}"
 context="kind-${cluster}"
+python3 scripts/local-kind-budget.py limit "$cluster"
+if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_ENVIRONMENT:-}" != github-hosted ]]; then
+  export GOMAXPROCS=2
+  export GOFLAGS="${GOFLAGS:-} -p=2"
+fi
 # KUBECONFIG is respected; the script never changes the selected context.
 kubectl --context "$context" get namespace ovn-kubernetes >/dev/null
 make image IMAGE="$image"

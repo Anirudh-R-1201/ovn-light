@@ -130,6 +130,17 @@ GitHub actions use commit SHAs. Update the OVN chart revision and image together
 To run locally on Linux with Docker, Go, kubectl, KIND, Helm, curl, Python 3 and
 OpenSSL installed:
 
+Prefer reusing an existing two-node demo. Local provisioning refuses to create
+another cluster when any KIND nodes already exist, including stopped nodes. It
+requires 12 GiB available RAM and serializes concurrent creation attempts. Do not
+delete an unrelated cluster just to pass this check. Local deployment accepts at
+most two nodes, requires 4 GiB available RAM, caps each node at 4 GiB (preserving
+any lower limit), disables extra container swap, and uses two Go build workers.
+These limits bound this demo, not total workstation memory use. The node caps
+are applied immediately after KIND creates the nodes, before installing OVN;
+the initial Kubernetes bootstrap is covered by the available-memory preflight.
+GitHub-hosted runners are exempt; each CI lane uses a separate machine.
+
 ```sh
 export KUBECONFIG="$(mktemp -d)/kubeconfig"
 export KIND_CLUSTER=ovn-light-ci-local

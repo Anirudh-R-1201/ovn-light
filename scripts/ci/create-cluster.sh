@@ -4,6 +4,12 @@ cd "$(dirname "$0")/../.."
 source scripts/ci/versions.env
 cluster="${1:?Usage: create-cluster.sh cluster-name}"
 : "${KUBECONFIG:?Set KUBECONFIG to a dedicated test file}"
+if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_ENVIRONMENT:-}" != github-hosted ]]; then
+  # Hold this through creation so two local invocations cannot pass the same check.
+  exec 9>"${XDG_RUNTIME_DIR:-/tmp}/ovn-light-kind-${UID}.lock"
+  flock -n 9 || { echo 'Another local OVN-Light cluster setup is running.' >&2; exit 1; }
+fi
+python3 scripts/local-kind-budget.py check-create
 mapfile -t clusters < <(kind get clusters)
 if [[ -e "$KUBECONFIG" ]] || [[ " ${clusters[*]} " == *" $cluster "* ]]; then
   echo "Refusing to reuse an existing cluster or kubeconfig: $cluster" >&2
@@ -21,6 +27,7 @@ image_info="$(docker run --rm --entrypoint cat "$OVN_IMAGE" /root/git_info)"
 ovn_tag="ovn-light-ci-ovn:$OVN_REVISION"
 docker tag "$OVN_IMAGE" "$ovn_tag"
 kind create cluster --name "$cluster" --image "$KIND_IMAGE" --config scripts/ci/kind.yaml --kubeconfig "$KUBECONFIG"
+python3 scripts/local-kind-budget.py limit "$cluster"
 kind load docker-image --name "$cluster" "$ovn_tag"
 context="kind-$cluster"
 kubectl --context "$context" apply -f "https://raw.githubusercontent.com/k8snetworkplumbingwg/multi-networkpolicy/$MULTI_POLICY_VERSION/scheme.yml"
