@@ -53,7 +53,7 @@ kubectl --context kind-ovn -n ovn-light get secret ovn-light-auth \
   -o jsonpath='{.data.token}' | base64 -d
 ```
 
-The deployment enables reviewed writes. To run read only, remove `--enable-writes`, the `create`/`delete` verbs for NetworkPolicy, MultiNetworkPolicy and ClusterNetworkConnect, and the `patch` verb for EgressFirewall in `deploy/ovn-light.yaml`. Collection still requires `pods/exec` in the OVN namespace.
+The deployment enables reviewed writes. To run read only, remove `--enable-writes`, the `create`/`delete` verbs for NetworkPolicy, MultiNetworkPolicy and ClusterNetworkConnect, and the `patch` verb for EgressFirewall in `deploy/ovn-light.yaml`. The server uses `pods/exec` for on-demand diagnostics and optional FRR inspection. The DaemonSet has its own service account and reads local OVS sockets.
 
 ### Generate a denied connection
 
@@ -128,14 +128,14 @@ separate nodes, initially denied by NetworkPolicy. It requires two schedulable
 nodes; it tolerates the KIND control-plane taint. Review client → server on the
 default network, TCP/8080, to allow the connection and observe forwarded traffic.
 
-Collection is one shared server job, independent of the number of browser tabs.
-The normal interval is 30 seconds after the previous collection finishes.
-`--collection-concurrency` defaults to 3; `--metadata-cache-ttl` defaults to 1 minute.
-The Collectors page reports duration, exec count, bytes read and cache hits.
-History is in memory, limited to 2,000 traffic groups and 60 collections over at
-most 10 minutes; truncation is visible. This remains a single-replica collector
-for initial deployments, not a production-scale certification. See
-[collection and scaling](docs/architecture.md#topology-and-scaling).
+The KIND deployment runs one DaemonSet collector per Linux node. Every 30 seconds
+after the previous round finishes, each collector reads its local OVS datapath,
+reconstructs paths, and computes counter deltas. It sends a compressed summary
+over HTTPS. Dashboard refreshes share this collection pipeline. The Collectors
+page shows the local command bytes, uploaded bytes, traffic groups and coverage
+for each node. The central server keeps up to 2,000 traffic groups and 60 rounds
+over ten minutes. Standalone `capture` still supports a full raw diagnostic snapshot.
+See [collection and scaling](docs/architecture.md#topology-and-scaling).
 
 ## UDNs and network connections
 

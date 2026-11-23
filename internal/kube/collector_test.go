@@ -32,26 +32,26 @@ func TestCollectorCachesUnchangedEvidenceAndInvalidates(t *testing.T) {
 		}
 	}
 	target := nodeTargets{ovs: Target{Pod: "ovs"}, ovn: Target{Pod: "ovn"}}
-	n := c.captureNode(context.Background(), "node", target, "inventory-v1")
+	n := c.captureNode(context.Background(), "node", target, "inventory-v1", nil)
 	if tables != 6 || traces != 1 || !n.Collection.FlowComplete {
 		t.Fatal(n, tables, traces)
 	}
 	flow = strings.Replace(flow, "packets:10", "packets:20", 1)
-	n = c.captureNode(context.Background(), "node", target, "inventory-v1")
+	n = c.captureNode(context.Background(), "node", target, "inventory-v1", nil)
 	if tables != 6 || traces != 1 || !n.Collection.MetadataCached || n.Collection.DetraceHits != 1 || n.Collection.Commands != 3 {
 		t.Fatal(n.Collection, tables, traces)
 	}
 	flow = strings.Replace(flow, "actions:drop", "actions:set(skb_mark(1)),drop", 1)
-	c.captureNode(context.Background(), "node", target, "inventory-v1")
+	c.captureNode(context.Background(), "node", target, "inventory-v1", nil)
 	if traces != 2 {
 		t.Fatal("changed translation reused", traces)
 	}
-	c.captureNode(context.Background(), "node", target, "inventory-v2")
+	c.captureNode(context.Background(), "node", target, "inventory-v2", nil)
 	if tables != 12 || traces != 3 {
 		t.Fatal("inventory change did not invalidate evidence", tables, traces)
 	}
 	c.cache["node"] = nodeCache{At: time.Now().Add(-2 * time.Minute), Key: "inventory-v2", Traces: map[string]traceCache{}}
-	c.captureNode(context.Background(), "node", target, "inventory-v2")
+	c.captureNode(context.Background(), "node", target, "inventory-v2", nil)
 	if tables != 18 {
 		t.Fatal("expired metadata reused")
 	}

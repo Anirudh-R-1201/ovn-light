@@ -1,6 +1,6 @@
 # Evidence, identity and remediation
 
-OVN-Light uses existing node OVS/OVN containers as a version-matched command environment. A Go server executes fixed read commands through Kubernetes. This initial design suits KIND; a node-local collector protocol would reduce exec overhead and RBAC scope at scale.
+The KIND deployment runs a collector beside OVS on each Linux node. The central server collects Kubernetes inventory and merges authenticated node reports for the dashboard.
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ flowchart LR
 
 ## Collection
 
-Each node supplies `ovs-appctl dpctl/dump-flows -m`, `dpctl/show`, OVS Interface rows, SB Port_Binding/Datapath_Binding/Logical_Flow rows, NB ACL rows, and `ofproto/detrace ufid:<id>` output for relevant flows. Commands have time and output limits. Node concurrency is three. Translation queries are bounded by `--max-detraces`; truncation and errors appear in Collectors.
+Each node supplies `ovs-appctl dpctl/dump-flows -m`, `dpctl/show`, OVS Interface rows, SB Port_Binding/Datapath_Binding/Logical_Flow rows, NB ACL rows, and `ofproto/detrace ufid:<id>` output for relevant flows. Commands have time and output limits. Each DaemonSet pod runs its commands sequentially. Translation queries are bounded by `--max-detraces`; truncation and errors appear in Collectors.
 
 Kubernetes inventory includes pods, namespaces, Services, NetworkPolicies, UDNs, NADs, CNCs, administrative policies and EgressFirewalls. An incomplete policy inventory prevents proposals. Missing optional CRDs are supported. Configure `--nb-db` and `--sb-db` for nonlocal database layouts. Pod discovery currently expects `ovs-daemons` or `ovs-vswitchd` and `ovnkube-controller` container names.
 
@@ -135,32 +135,42 @@ are explicit. The browser polls a compact `/api/context` and topology response;
 it fetches full drop evidence only when requested. Up to 32 graph queries are
 cached per recent revision/time bucket, so viewers do not each rebuild the graph.
 
-Collection remains a central Kubernetes-exec implementation. It waits for the
-configured interval after each completed capture, with no overlapping or queued
-polls. Concurrency defaults to three nodes and is configurable from one to 16.
-The complete capture has a two-minute deadline; each node has 90 seconds and each
-command 15 seconds. Limits are 8 MiB per command output, 24 MiB of command output
-per node, and 64 MiB of serialized node evidence per snapshot. Omitted evidence
-is reported instead of being interpreted as absent traffic. Kubernetes inventory
-is separate from this node-evidence budget.
+The default KIND deployment starts a round every 30 seconds after the last one
+finishes. Each agent long-polls the central service over HTTPS, receives a round
+ID, and reads the local OVS and OVN Unix sockets using the cluster's own CLI
+image. Inventory is listed once centrally. Agents reuse a compressed projection
+of network attachments, host addresses and attribution policies until its key
+changes. The collector has a 90-second node deadline, a 15-second command timeout,
+and output limits of 8 MiB per command and 24 MiB per node. OVN tables and UFID
+translations are cached locally for up to a minute by default.
 
-OVN tables and unchanged UFID translations are cached per node for up to one
-minute (configurable from five seconds to five minutes). Changes to relevant
-Kubernetes object versions or the collector target invalidate the cache;
-changed flow matches/actions invalidate the individual translation. The cache
-budget uses serialized input size: at most 16 MiB per node and 32 MiB total.
-Decoded Go objects consume additional memory. Cold collection reads four OVN
-tables per node; warm collection needs only flow, port and interface dumps plus
-uncached translations. Offload configuration and supported provider/CT diagnostics add a separately cached, bounded read once per minute. Pod-facing forwarded outputs need no translation lookup;
-remote outputs use only their terminal translation. Drop paths have priority
-within the lookup budget. Collectors reports time, command count, input bytes,
-metadata reuse and translation cache hits.
+The agent reconstructs recirculations and compares terminal counters to its own
+previous dump. It groups compatible observations by network, endpoint identity,
+direction, protocol, destination port, interval, evidence quality and offload
+state. Shared counters and linked drop evidence keep their identities. Each
+agent uploads one gzip report with traffic groups, drop evidence, offload status
+and the routing and QoS data needed by those views. FRR queries still use
+centralized Kubernetes exec. Browser requests for explicit simulations and
+connectivity verification also use the server's existing diagnostic permissions.
 
-This bounds the first implementation but does not remove its scaling costs:
-full datapath dumps are proportional to cached flows, inventory is still listed,
-and exec traverses the API server. Large-cluster work should introduce node-local
-DaemonSet collectors, watched Kubernetes/OVSDB inventory, authenticated bounded
-observation batches with epochs/sequence numbers, and partitioned aggregation.
-The observation model is independent of that transport. Multiple replicas of the
-current server would independently collect and would not share history or audit
-coordination; increasing Deployment replicas is not a scaling mechanism.
+The collector service on port 8443 has its own TLS certificate. Its Kubernetes
+TokenReview checks the audience and collector service account. The server matches
+the token's bound pod UID to the scheduled DaemonSet pod for that node. The agent
+has no Kubernetes RBAC grants. Its local OVS control sockets provide privileged
+access to the node datapath even with a read-only mount. The deployment script
+creates the demo certificate and public trust bundle. Renew both and restart the
+server and agents before the certificate's one-year expiry.
+
+The server accepts one report per node and round. Retries use the same round ID.
+Expired rounds are rejected. A restarted collector needs a new counter baseline.
+Missing nodes and size limits appear on the Collectors page. Each upload is
+limited to 1 MiB compressed and 4 MiB decoded, with a 64 MiB decoded report
+budget across the round. Oversize samples shed detail and mark coverage
+incomplete. Dashboard snapshot exports contain the accepted summaries. Use the
+standalone `capture` command for a raw troubleshooting capture.
+
+Local flow enumeration still grows with the size of each node's datapath cache.
+The single server lists inventory, distributes changed identity data and retains
+the recent graph in memory. The two-node demo exercises the protocol. Capacity at
+2,000 nodes still requires measured testing of uplink traffic, collection latency,
+inventory churn and server memory.

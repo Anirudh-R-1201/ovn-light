@@ -22,7 +22,29 @@ type Inventory struct {
 	Errors           []string                               `json:"errors,omitempty"`
 }
 
+// NodeSummary contains the derived observations from one local collection.
+type NodeSummary struct {
+	OmittedPaths int                    `json:"omittedPaths,omitempty"`
+	Flows        int                    `json:"flows"`
+	Offloaded    int                    `json:"offloaded"`
+	Traffic      []TrafficObservation   `json:"traffic,omitempty"`
+	Findings     []Finding              `json:"findings,omitempty"`
+	OffloadNode  OffloadNode            `json:"offloadNode"`
+	Paths        []CollectorOffloadPath `json:"paths,omitempty"`
+}
+
+type CollectorOffloadPath struct {
+	Path          OffloadPath `json:"path"`
+	Signature     string      `json:"signature"`
+	Datapath      string      `json:"datapath"`
+	Complete      bool        `json:"complete"`
+	Eligible      bool        `json:"eligible"`
+	CTProblem     bool        `json:"ctProblem"`
+	DiagnosticsAt time.Time   `json:"diagnosticsAt"`
+}
+
 type NodeSnapshot struct {
+	Summary        *NodeSummary      `json:"summary,omitempty"`
 	QoS            QoSEvidence       `json:"qos"`
 	Routing        RoutingEvidence   `json:"routing"`
 	Offload        OffloadEvidence   `json:"offload"`
@@ -44,6 +66,9 @@ type NodeSnapshot struct {
 }
 
 type CollectionStats struct {
+	SummaryBytes   int   `json:"summaryBytes,omitempty"`
+	TrafficGroups  int   `json:"trafficGroups,omitempty"`
+	Agent          bool  `json:"agent,omitempty"`
 	DurationMS     int64 `json:"durationMs"`
 	Commands       int   `json:"commands"`
 	Bytes          int   `json:"bytes"`
@@ -172,6 +197,7 @@ type NodeStatus struct {
 // A counter belongs to one observation point. Source and destination counters
 // remain separate even when they describe the same traffic.
 type TrafficObservation struct {
+	Members      int       `json:"members,omitempty"`
 	CounterID    string    `json:"counterID"`
 	Node         string    `json:"node"`
 	Network      string    `json:"network"`

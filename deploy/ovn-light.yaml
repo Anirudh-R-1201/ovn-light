@@ -14,6 +14,9 @@ kind: ClusterRole
 metadata:
   name: ovn-light
 rules:
+- apiGroups: [authentication.k8s.io]
+  resources: [tokenreviews]
+  verbs: [create]
 - apiGroups: [""]
   resources: [pods, namespaces, nodes, services]
   verbs: [get, list]
@@ -120,13 +123,14 @@ spec:
       - name: ovn-light
         image: ovn-light:dev
         imagePullPolicy: IfNotPresent
-        args: ["--listen=:8080", "--enable-writes", "--data-dir=/data", "--interval=30s"]
+        args: ["--listen=:8080", "--enable-writes", "--data-dir=/data", "--interval=30s", "--daemonset-collectors"]
         env:
         - name: OVN_LIGHT_TOKEN
           valueFrom:
             secretKeyRef: {name: ovn-light-auth, key: token}
         ports:
         - {name: http, containerPort: 8080}
+        - {name: collector, containerPort: 8443}
         readinessProbe:
           httpGet: {path: /healthz, port: http}
           initialDelaySeconds: 2
@@ -142,7 +146,10 @@ spec:
           capabilities: {drop: [ALL]}
         volumeMounts:
         - {name: data, mountPath: /data}
+        - {name: tls, mountPath: /collector-tls, readOnly: true}
       volumes:
+      - name: tls
+        secret: {secretName: ovn-light-collector-tls}
       - name: data
         persistentVolumeClaim: {claimName: ovn-light-data}
 ---
@@ -155,4 +162,12 @@ spec:
   selector: {app: ovn-light}
   ports:
   - {name: http, port: 8080, targetPort: http}
+  - {name: collector, port: 8443, targetPort: collector}
   type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ovn-light-agent
+  namespace: ovn-light
+automountServiceAccountToken: false

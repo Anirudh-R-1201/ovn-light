@@ -18,6 +18,8 @@ import (
 )
 
 type Collector struct {
+	Hub                   *Hub
+	local                 bool
 	Client                *Client
 	RoutingEnabled        bool
 	routingCache          map[string]routingCache
@@ -50,7 +52,7 @@ func inventoryKey(inv model.Inventory) string {
 	var versions []string
 	add := func(v any) { b, _ := json.Marshal(v); versions = append(versions, string(b)) }
 	for _, p := range inv.Pods {
-		add([]any{"pod", p.UID, p.Namespace, p.Name, p.Spec.NodeName, p.Spec.HostNetwork, p.Labels, p.Annotations["k8s.ovn.org/pod-networks"], p.Annotations["k8s.v1.cni.cncf.io/network-status"], p.DeletionTimestamp})
+		add([]any{"pod", p.UID, p.Namespace, p.Name, p.Spec.NodeName, p.Spec.HostNetwork, p.Status.HostIP, p.Status.PodIPs, p.Labels, p.Annotations["k8s.ovn.org/pod-networks"], p.Annotations["k8s.v1.cni.cncf.io/network-status"], p.DeletionTimestamp})
 	}
 	for _, p := range inv.Policies {
 		add([]any{"policy", p.UID, p.Namespace, p.Spec})
@@ -161,12 +163,40 @@ func (c *Collector) Capture(ctx context.Context) (model.Snapshot, error) {
 			}
 		}
 	}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
 	concurrency := c.Concurrency
 	if concurrency <= 0 {
 		concurrency = 3
 	}
+	if c.Hub != nil {
+		s.Nodes, err = c.Hub.collect(ctx, inv, selected, key)
+		if err != nil {
+			return s, err
+		}
+		var wg sync.WaitGroup
+		slots := make(chan struct{}, concurrency)
+		for i := range s.Nodes {
+			n := &s.Nodes[i]
+			if t := targets[n.Name].frr; t.Pod != "" {
+				slots <- struct{}{}
+				wg.Go(func() {
+					defer func() { <-slots }()
+					fr := c.captureRouting(n.Name, nodeTargets{frr: t}, func(t Target, args ...string) (string, error) {
+						call, cancel := context.WithTimeout(ctx, 15*time.Second)
+						defer cancel()
+						return c.Client.execBounded(call, t, args, nil, 1<<20)
+					})
+					n.Routing.FRRTarget, n.Routing.Peers = fr.FRRTarget, fr.Peers
+					n.Routing.Errors = append(n.Routing.Errors, fr.Errors...)
+				})
+			}
+		}
+		wg.Wait()
+		sort.Slice(s.Nodes, func(i, j int) bool { return s.Nodes[i].Name < s.Nodes[j].Name })
+		s.CapturedAt = time.Now().UTC()
+		return s, nil
+	}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	names := make([]string, 0, len(targets))
 	for name, t := range targets {
 		if t.ovs.Pod != "" || t.ovn.Pod != "" {
@@ -190,7 +220,7 @@ func (c *Collector) Capture(ctx context.Context) (model.Snapshot, error) {
 				if ctx.Err() != nil {
 					n = model.NodeSnapshot{Name: name, CapturedAt: time.Now().UTC(), Errors: []string{"Collection deadline reached before this node could be inspected."}}
 				} else {
-					n = c.captureNode(ctx, name, targets[name], key)
+					n = c.captureNode(ctx, name, targets[name], key, nil)
 				}
 				encoded, _ := json.Marshal(n)
 				mu.Lock()
@@ -214,7 +244,7 @@ func (c *Collector) Capture(ctx context.Context) (model.Snapshot, error) {
 	return s, nil
 }
 
-func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets, key string) (n model.NodeSnapshot) {
+func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets, key string, prepared *datapath.Sample) (n model.NodeSnapshot) {
 	started := time.Now()
 	defer func() { n.Collection.DurationMS = time.Since(started).Milliseconds() }()
 	ctx, cancelNode := context.WithTimeout(ctx, 90*time.Second)
@@ -235,7 +265,9 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 		var out string
 		var err error
 		n.Collection.Commands++
-		if c.exec != nil {
+		if c.local {
+			out, err = localExec(call, args, min(8<<20, (24<<20)-n.Collection.Bytes))
+		} else if c.exec != nil {
 			out, err = c.exec(call, target, args)
 		} else {
 			out, err = c.Client.execBounded(call, target, args, nil, min(8<<20, (24<<20)-n.Collection.Bytes))
@@ -301,12 +333,15 @@ func (c *Collector) captureNode(ctx context.Context, name string, t nodeTargets,
 	}
 	n.QoS = cached.QoS
 	n.Bindings, n.Datapaths, n.LogicalFlows, n.ACLs, n.MetadataAt = cached.Bindings, cached.Datapaths, cached.LogicalFlows, cached.ACLs, cached.At
-	flows, parseErrors := datapath.Parse(n.Flows)
-	if len(parseErrors) > 0 {
-		n.Collection.FlowComplete = false
-		n.Errors = append(n.Errors, parseErrors...)
+	sample := datapath.ReadSample(n.Flows, n.Ports)
+	if prepared != nil {
+		*prepared = sample
 	}
-	paths := datapath.ReconstructTraffic(flows, datapath.PortNames(n.Ports)...)
+	flows, paths := sample.Flows, sample.Paths
+	if len(sample.Errors) > 0 {
+		n.Collection.FlowComplete = false
+		n.Errors = append(n.Errors, sample.Errors...)
+	}
 	wanted := map[string]int{}
 	localPods := map[string]bool{}
 	for _, iface := range n.Interfaces {

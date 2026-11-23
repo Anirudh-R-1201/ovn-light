@@ -326,6 +326,16 @@ class Harness:
         assert restored['metadata']['uid'] == before['metadata']['uid'] and restored['spec'] == before['spec']
         print('EgressFirewall: rollback restored denial and preserved the existing firewall UID and ordered rules.', flush=True)
 
+    def daemonset_reports(self):
+        snapshot = self.api('snapshot')
+        nodes = snapshot.get('nodes') or []
+        assert len(nodes) == 2, 'Expected reports from both KIND nodes'
+        for node in nodes:
+            stats = node['collection']
+            assert stats.get('agent') and 0 < stats.get('summaryBytes', 0) <= 1024**2, node['name']
+            assert node['summary']['flows'] > 0 and stats['trafficGroups'] > 0, node['name']
+            assert not any(node.get(key) for key in ('flows', 'detraces', 'logicalFlows')), node['name']
+
     def artifacts(self):
         if self.args.artifacts:
             directory = Path(self.args.artifacts)
@@ -350,6 +360,7 @@ def main(default_lane='cdn'):
     harness = Harness(args)
     try:
         if args.lane == 'topology':
+            harness.eventually(harness.daemonset_reports)
             harness.policy('ovn-light-topology', 'primary')
         elif args.lane == 'cdn':
             harness.policy('ovn-light-demo', 'primary')

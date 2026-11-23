@@ -31,10 +31,8 @@ retained strings, not total Go heap usage. UI summaries omit raw stages; an
 individual path request retrieves them. The API returns at most 100 paths.
 
 Full flow and CT enumeration still costs work proportional to table size; the
-output limit does not make OVS's enumeration constant-time. At large scale, move
-collection beside each OVS instance and send bounded deltas to the server. The
-current implementation uses the existing central collector and Kubernetes exec.
-It does not start extra scans when a browser opens the offload page.
+output limit does not make OVS's enumeration constant-time. The KIND DaemonSet performs this scan locally. Filtered offload evidence travels
+with the compressed report. Opening the offload page reads the latest report.
 
 ## Interpretation
 

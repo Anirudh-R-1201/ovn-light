@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/trozet/ovn-light/internal/app"
+	"github.com/trozet/ovn-light/internal/datapath"
 	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/ovn"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -227,5 +228,45 @@ func TestOVSDBTaggedValues(t *testing.T) {
 	rows, e := ovn.DecodeTable(`{"headings":["_uuid","external_ids","datapath"],"data":[[["uuid","abc"],["map",[["iface-id","ns_pod"]]],["uuid","def"]]]}`)
 	if e != nil || ovn.Str(rows[0]["_uuid"]) != "abc" || ovn.Map(rows[0]["external_ids"])["iface-id"] != "ns_pod" {
 		t.Fatal(rows, e)
+	}
+}
+
+func TestDistributedSnapshotPreservesAttributionAndOffloadHistory(t *testing.T) {
+	s := app.Demo()
+	prior := app.DemoBaseline(s)
+	before := ovn.Analyze(s, &prior)
+	var nodes []model.NodeSnapshot
+	for i, n := range s.Nodes {
+		previous := model.Snapshot{Nodes: []model.NodeSnapshot{prior.Nodes[i]}}
+		summary := ovn.Summarize(n, &previous, ovn.Project(s.Inventory), datapath.ReadSample(n.Flows, n.Ports))
+		raw, err := json.Marshal(summary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var received model.NodeSnapshot
+		if err = json.Unmarshal(raw, &received); err != nil {
+			t.Fatal(err)
+		}
+		if received.Flows != "" || len(received.Detraces) != 0 || len(received.LogicalFlows) != 0 {
+			t.Fatal("bulk flow evidence survived projection")
+		}
+		nodes = append(nodes, received)
+	}
+	s.Nodes = nodes
+	after := ovn.Analyze(s, nil)
+	if len(after.Findings) != len(before.Findings) || len(after.Findings) == 0 || len(after.Offload.Paths) != len(before.Offload.Paths) || len(after.Offload.Paths) == 0 {
+		t.Fatal("missing finding or offload evidence")
+	}
+	for i, f := range before.Findings {
+		got := after.Findings[i]
+		if got.ID != f.ID || got.Source.UID != f.Source.UID || got.Destination.UID != f.Destination.UID || got.Causes[0].ACL != f.Causes[0].ACL || *got.Delta != *f.Delta || len(got.Steps) != len(f.Steps) {
+			t.Fatal("changed drop attribution", f.ID)
+		}
+	}
+	for i, p := range before.Offload.Paths {
+		got := after.Offload.Paths[i]
+		if p.Signature != got.Signature || p.Eligible != got.Eligible || p.SampleComplete != got.SampleComplete {
+			t.Fatal("offload history lost its identity")
+		}
 	}
 }

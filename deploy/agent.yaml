@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ovn-light-agent
+  namespace: ovn-light
+spec:
+  selector:
+    matchLabels: {app: ovn-light-agent}
+  template:
+    metadata:
+      labels: {app: ovn-light-agent}
+    spec:
+      serviceAccountName: ovn-light-agent
+      automountServiceAccountToken: false
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector: {kubernetes.io/os: linux}
+      tolerations: [{operator: Exists}]
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+        fsGroup: 10001
+      initContainers:
+      - name: install
+        image: ovn-light:dev
+        imagePullPolicy: IfNotPresent
+        args: [install-agent]
+        securityContext:
+          runAsUser: 10001
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+        - {name: agent, mountPath: /agent}
+      containers:
+      - name: collector
+        # deploy-kind substitutes the same OVN tool image used by the node.
+        image: ovn-light-ci-ovn:251895cd534fcdc797a9fdbb7f289a95b63ea4af
+        imagePullPolicy: IfNotPresent
+        command: [/agent/ovn-light, agent]
+        env:
+        - name: NODE_NAME
+          valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+        - {name: GOMAXPROCS, value: "1"}
+        - {name: GOMEMLIMIT, value: "160MiB"}
+        resources:
+          requests: {cpu: 25m, memory: 32Mi}
+          limits: {cpu: 500m, memory: 256Mi}
+        securityContext:
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+        - {name: agent, mountPath: /agent, readOnly: true}
+        - {name: ovs, mountPath: /var/run/openvswitch, readOnly: true}
+        - {name: ovs, mountPath: /var/run/ovn, readOnly: true}
+        - {name: identity, mountPath: /collector-identity, readOnly: true}
+        - {name: ca, mountPath: /collector-ca, readOnly: true}
+      volumes:
+      - name: agent
+        emptyDir: {}
+      - name: ovs
+        hostPath: {path: /var/run/openvswitch, type: Directory}
+      - name: ca
+        configMap: {name: ovn-light-collector-ca}
+      - name: identity
+        projected:
+          sources:
+          - serviceAccountToken:
+              audience: ovn-light-collectors
+              expirationSeconds: 3600
+              path: token

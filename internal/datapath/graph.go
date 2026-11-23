@@ -17,6 +17,18 @@ type Path struct {
 	ConditionalCounter bool
 }
 
+// Sample is shared by translation lookup and attribution for one flow dump.
+type Sample struct {
+	Flows  []Flow
+	Paths  []Path
+	Errors []string
+}
+
+func ReadSample(raw, ports string) Sample {
+	flows, errs := Parse(raw)
+	return Sample{Flows: flows, Errors: errs, Paths: ReconstructTraffic(flows, PortNames(ports)...)}
+}
+
 // Reconstruct follows compatible packet constraints rather than treating a
 // recirculation ID as a connection ID. Limits bound adversarial/large dumps.
 func Reconstruct(flows []Flow) []Path {

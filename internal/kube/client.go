@@ -113,16 +113,18 @@ func (c *Client) Inventory(ctx context.Context) (model.Inventory, error) {
 type Target struct{ Namespace, Pod, Container string }
 
 type limitedBuffer struct {
-	bytes.Buffer
+	buf       bytes.Buffer
 	remaining int
 }
+
+func (b *limitedBuffer) String() string { return b.buf.String() }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
 	if len(p) > b.remaining {
 		return 0, fmt.Errorf("command output exceeds size limit")
 	}
 	b.remaining -= len(p)
-	return b.Buffer.Write(p)
+	return b.buf.Write(p)
 }
 
 func (c *Client) Exec(ctx context.Context, t Target, args []string, stdin io.Reader) (string, error) {

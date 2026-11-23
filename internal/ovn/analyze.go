@@ -18,11 +18,20 @@ var portRE = regexp.MustCompile(`(?m)^\s*port\s+(\d+):\s+([^\s(]+)`)
 var cookieRE = regexp.MustCompile(`cookie[= ]+(?:0x)?([0-9a-fA-F]+)`)
 
 func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
-	v := model.View{CollectedAt: s.CapturedAt, Findings: []model.Finding{}, Networks: Networks(s.Inventory), Nodes: []model.NodeStatus{}, Pods: []model.Endpoint{}, Errors: append([]string{}, s.Inventory.Errors...), Connections: s.Inventory.Resources["clusternetworkconnects"]}
-	attachments := Attachments(s.Inventory)
+	return analyze(s, previous, Attachments(s.Inventory), nil, nil)
+}
+
+func analyze(s model.Snapshot, previous *model.Snapshot, attachments []Attachment, hosts map[string]string, prepared *datapath.Sample) model.View {
+	v := model.View{CollectedAt: s.CapturedAt, Findings: []model.Finding{}, Nodes: []model.NodeStatus{}, Pods: []model.Endpoint{}, Errors: append([]string{}, s.Inventory.Errors...), Connections: s.Inventory.Resources["clusternetworkconnects"]}
 	traffic := newTrafficIndex(s.Inventory, attachments)
-	for _, a := range attachments {
-		v.Pods = append(v.Pods, a.Endpoint)
+	if hosts != nil {
+		traffic.hosts = hosts
+	}
+	if prepared == nil {
+		v.Networks = Networks(s.Inventory)
+		for _, a := range attachments {
+			v.Pods = append(v.Pods, a.Endpoint)
+		}
 	}
 	old := map[string]datapath.Flow{}
 	oldNodes := map[string]model.NodeSnapshot{}
@@ -36,7 +45,25 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 		}
 	}
 	for _, n := range s.Nodes {
-		flows, errs := datapath.Parse(n.Flows)
+		if m := n.Summary; m != nil {
+			v.Nodes = append(v.Nodes, model.NodeStatus{Name: n.Name, CapturedAt: flowTime(n), Collection: n.Collection, Errors: n.Errors, Flows: m.Flows, Offloaded: m.Offloaded})
+			v.Findings = append(v.Findings, m.Findings...)
+			v.Traffic = append(v.Traffic, m.Traffic...)
+			v.Offload.Omitted += m.OmittedPaths
+			v.Offload.Nodes = append(v.Offload.Nodes, m.OffloadNode)
+			for _, wire := range m.Paths {
+				p := wire.Path
+				p.Signature, p.Datapath, p.SampleComplete, p.Eligible, p.CTProblem, p.DiagnosticsAt = wire.Signature, wire.Datapath, wire.Complete, wire.Eligible, wire.CTProblem, wire.DiagnosticsAt
+				v.Offload.Paths = append(v.Offload.Paths, p)
+			}
+			continue
+		}
+		sample := prepared
+		if sample == nil {
+			raw := datapath.ReadSample(n.Flows, n.Ports)
+			sample = &raw
+		}
+		flows, errs := sample.Flows, sample.Errors
 		status := model.NodeStatus{Name: n.Name, Flows: len(flows), CapturedAt: flowTime(n), Collection: n.Collection, Errors: append(append([]string{}, n.Errors...), errs...)}
 		for _, f := range flows {
 			if f.Offloaded {
@@ -44,7 +71,7 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 			}
 		}
 		v.Nodes = append(v.Nodes, status)
-		allPaths := datapath.ReconstructTraffic(flows, datapath.PortNames(n.Ports)...)
+		allPaths := sample.Paths
 		paths := make([]datapath.Path, 0)
 		for _, p := range allPaths {
 			if p.Verdict == "drop" {
@@ -210,7 +237,9 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 		}
 		return a.ID < b.ID
 	})
-	sourceContexts(&v, traffic)
+	if prepared == nil {
+		sourceContexts(&v, traffic)
+	}
 	v.Offload.CollectedAt = s.CapturedAt
 	return v
 }

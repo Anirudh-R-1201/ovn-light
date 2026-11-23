@@ -3,9 +3,11 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -32,11 +34,28 @@ func main() {
 func run() error {
 	command := "serve"
 	args := os.Args[1:]
-	if len(args) > 0 && (args[0] == "capture" || args[0] == "serve") {
+	if len(args) == 1 && args[0] == "install-agent" {
+		src, err := os.Open("/ovn-light")
+		if err != nil {
+			return err
+		}
+		defer src.Close()
+		dest, err := os.OpenFile("/agent/ovn-light", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+		if err != nil {
+			return err
+		}
+		if _, err = io.Copy(dest, src); err != nil {
+			dest.Close()
+			return err
+		}
+		return dest.Close()
+	}
+	if len(args) > 0 && (args[0] == "capture" || args[0] == "serve" || args[0] == "agent") {
 		command = args[0]
 		args = args[1:]
 	}
 	fs := flag.NewFlagSet("ovn-light "+command, flag.ContinueOnError)
+	distributed := fs.Bool("daemonset-collectors", false, "Collect node summaries through the authenticated collector listener")
 	addr := fs.String("listen", "127.0.0.1:8080", "HTTP listen address (use port-forward for cluster access)")
 	demo := fs.Bool("demo", false, "Use explicitly synthetic evidence; writes are always disabled")
 	snapshotFile := fs.String("snapshot", "", "Read a captured snapshot; writes are always disabled")
@@ -88,6 +107,9 @@ func run() error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	if command == "agent" {
+		return kube.RunAgent(ctx, &kube.Collector{RoutingEnabled: true, MaxDetraces: *maxDetraces, CacheTTL: *metadataTTL, NBDB: *nbdb, SBDB: *sbdb}, os.Getenv("NODE_NAME"))
+	}
 	mode := "live"
 	var client *kube.Client
 	var collector *kube.Collector
@@ -163,6 +185,16 @@ func run() error {
 		}
 		a.Load(snapshot)
 	} else {
+		if *distributed {
+			collector.Hub = kube.NewHub(client)
+			ingest := &http.Server{Addr: ":8443", Handler: collector.Hub, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 40 * time.Second, IdleTimeout: 60 * time.Second, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
+			go func() { <-ctx.Done(); _ = ingest.Close() }()
+			go func() {
+				if e := ingest.ListenAndServeTLS("/collector-tls/tls.crt", "/collector-tls/tls.key"); e != nil && e != http.ErrServerClosed {
+					log.Fatalf("collector listener: %v", e)
+				}
+			}()
+		}
 		go a.Run(ctx, *interval)
 	}
 	server := web.Server(*addr, web.Handler(a, token))

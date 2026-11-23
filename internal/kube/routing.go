@@ -51,49 +51,51 @@ func (c *Collector) captureRouting(name string, t nodeTargets, execute func(Targ
 		}
 		return raw, true
 	}
-	array := func(args ...string) ([]model.Row, bool) {
-		raw, ok := run(t.ovs, args...)
-		if !ok {
-			return nil, false
+	if t.ovs.Pod != "" {
+		array := func(args ...string) ([]model.Row, bool) {
+			raw, ok := run(t.ovs, args...)
+			if !ok {
+				return nil, false
+			}
+			var rows []model.Row
+			if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+				e.Errors = append(e.Errors, "Could not decode host routing JSON: "+err.Error())
+				return nil, false
+			}
+			return rows, true
 		}
-		var rows []model.Row
-		if err := json.Unmarshal([]byte(raw), &rows); err != nil {
-			e.Errors = append(e.Errors, "Could not decode host routing JSON: "+err.Error())
-			return nil, false
+		var ok, ok4, ok6 bool
+		e.Links, ok = array("ip", "-j", "-d", "link", "show")
+		routes4, ok4 := array("ip", "-j", "-4", "route", "show", "table", "all")
+		routes6, ok6 := array("ip", "-j", "-6", "route", "show", "table", "all")
+		for _, r := range routes4 {
+			r["family"] = "ipv4"
 		}
-		return rows, true
-	}
-	var ok, ok4, ok6 bool
-	e.Links, ok = array("ip", "-j", "-d", "link", "show")
-	routes4, ok4 := array("ip", "-j", "-4", "route", "show", "table", "all")
-	routes6, ok6 := array("ip", "-j", "-6", "route", "show", "table", "all")
-	for _, r := range routes4 {
-		r["family"] = "ipv4"
-	}
-	for _, r := range routes6 {
-		r["family"] = "ipv6"
-	}
-	e.Routes = append(routes4, routes6...)
-	e.HostComplete = ok && ok4 && ok6
-	table := func(target Target, args ...string) ([]model.Row, bool) {
-		raw, ok := run(target, args...)
-		if !ok {
-			return nil, false
+		for _, r := range routes6 {
+			r["family"] = "ipv6"
 		}
-		rows, err := ovn.DecodeTable(raw)
-		if err != nil {
-			e.Errors = append(e.Errors, "Could not decode routing OVSDB table: "+err.Error())
-			return nil, false
+		e.Routes = append(routes4, routes6...)
+		e.HostComplete = ok && ok4 && ok6
+		table := func(target Target, args ...string) ([]model.Row, bool) {
+			raw, ok := run(target, args...)
+			if !ok {
+				return nil, false
+			}
+			rows, err := ovn.DecodeTable(raw)
+			if err != nil {
+				e.Errors = append(e.Errors, "Could not decode routing OVSDB table: "+err.Error())
+				return nil, false
+			}
+			return rows, true
 		}
-		return rows, true
+		e.BridgeMappings, _ = run(t.ovs, "ovs-vsctl", "--timeout=10", "--if-exists", "get", "Open_vSwitch", ".", "external_ids:ovn-bridge-mappings")
+		e.Bridges, _ = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=_uuid,name,ports,external_ids", "list", "Bridge")
+		e.OVSPorts, _ = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=_uuid,name,interfaces", "list", "Port")
+		e.Routers, ok = table(t.ovn, "ovn-nbctl", "--timeout=10", "--db="+c.NBDB, "--format=json", "--columns=_uuid,name,external_ids,policies,nat", "list", "Logical_Router")
+		e.Policies, ok4 = table(t.ovn, "ovn-nbctl", "--timeout=10", "--db="+c.NBDB, "--format=json", "--columns=_uuid,priority,match,action,nexthops,external_ids", "list", "Logical_Router_Policy")
+		e.NAT, ok6 = table(t.ovn, "ovn-nbctl", "--timeout=10", "--db="+c.NBDB, "--format=json", "--columns=_uuid,type,logical_ip,external_ip,logical_port,external_ids", "list", "NAT")
+		e.OVNComplete = ok && ok4 && ok6
 	}
-	e.BridgeMappings, _ = run(t.ovs, "ovs-vsctl", "--timeout=10", "--if-exists", "get", "Open_vSwitch", ".", "external_ids:ovn-bridge-mappings")
-	e.Bridges, _ = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=_uuid,name,ports,external_ids", "list", "Bridge")
-	e.OVSPorts, _ = table(t.ovs, "ovs-vsctl", "--timeout=10", "--format=json", "--columns=_uuid,name,interfaces", "list", "Port")
-	e.Routers, ok = table(t.ovn, "ovn-nbctl", "--timeout=10", "--db="+c.NBDB, "--format=json", "--columns=_uuid,name,external_ids,policies,nat", "list", "Logical_Router")
-	e.Policies, ok4 = table(t.ovn, "ovn-nbctl", "--timeout=10", "--db="+c.NBDB, "--format=json", "--columns=_uuid,priority,match,action,nexthops,external_ids", "list", "Logical_Router_Policy")
-	e.NAT, ok6 = table(t.ovn, "ovn-nbctl", "--timeout=10", "--db="+c.NBDB, "--format=json", "--columns=_uuid,type,logical_ip,external_ip,logical_port,external_ids", "list", "NAT")
-	e.OVNComplete = ok && ok4 && ok6
 	if t.frr.Pod != "" {
 		e.FRRTarget = t.frr.Namespace + "/" + t.frr.Pod
 		raw, ok := run(t.frr, "vtysh", "-c", "show bgp vrf all summary json")

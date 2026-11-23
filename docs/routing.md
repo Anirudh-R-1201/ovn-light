@@ -90,11 +90,11 @@ apply. Routing results over 1 MiB per command are omitted; aggregate reads stop
 after the 4 MiB budget is reached. The cache is bounded to 16 MiB and shares the
 existing 64 MiB snapshot limit. Truncation and query failures are visible.
 
-The collector still polls Kubernetes inventory and executes centrally with bounded
-concurrency. NAT associations are indexed once per collection and reused for pod
-paths. This is suitable for initial deployments; large-cluster validation,
-watch-based inventory and distributed collectors remain future work. Increasing
-node or peer count can exceed collection budgets and leave partial coverage.
+The DaemonSet collects host and OVN routing evidence locally, and the server
+polls Kubernetes inventory and FRR. NAT associations are indexed once per round
+and reused for pod paths. Large numbers of peers or routes can exceed the
+collection budgets and leave partial coverage.
+
 
 `GET /api/routing` requires the normal access token and accepts `network`, `node`,
 `search`, `limit` (1–100), and `offset`. Pagination applies independently to each
