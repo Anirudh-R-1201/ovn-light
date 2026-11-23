@@ -1,10 +1,10 @@
 # OVN-Light implementation
 
 OVN-Light observes existing OVS datapath flows without enabling sampling,
-changing megaflows, or changing offload configuration. A Go service collects
-read-only command output through the Kubernetes exec API in existing OVS/OVN
-containers. This keeps its parser and deployment independent of a particular
-OVS image. It also supports portable JSON snapshots and an explicit demo mode.
+changing megaflows, or changing offload configuration. KIND runs a DaemonSet that reads each node's local sockets with the deployed
+OVS and OVN tools. Each collector reconstructs paths and sends a compressed
+summary to the central server. The standalone capture command can export raw
+evidence through Kubernetes exec for offline analysis.
 
 The reconstruction engine indexes recirculation stages, composes masked packet
 constraints through supported actions, and keeps ambiguity explicit. Port
@@ -35,6 +35,6 @@ Implementation checkpoints:
 - [x] Collection budgets, metadata/translation caches and collector cost metrics
 - [x] Tests, live validation and recorded limitations
 
-Hardware validation, secondary-interface verification, distributed collection,
+Hardware validation, secondary-interface verification,
 ordered administrative-policy evaluation and an OpenShift operator remain
 future work. See architecture.md for the boundaries of this first release.

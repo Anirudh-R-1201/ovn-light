@@ -28,22 +28,17 @@ claims about all traffic in the cluster.
 
 ## Collection scale
 
-The present live collector still executes commands through Kubernetes into the
-existing OVN/OVS containers. It uses a fixed worker pool, defaults to three
-concurrent node collections, and caches metadata for one minute. Status-only pod
-updates no longer invalidate the cache. Relevant labels, attachment identity and
-policy specs do invalidate it. `--collection-node-selector` can restrict datapath
-inspection to selected nodes; the UI reports that reduced coverage. Inventory is
-still cluster-wide and is listed each round.
+Each DaemonSet collector reads its local OVS instance and uploads traffic
+groups with separate source, receiver and drop counters. The central server
+lists cluster inventory once per round. Set `--collection-node-selector` on
+the server to limit which nodes receive collection requests. Set the
+DaemonSet's node selector as well to limit pod placement.
 
-Existing bounds remain: two-minute capture deadline, 24 MiB command output per
-node, 64 MiB retained raw node snapshots, 32 MiB metadata cache, and 2,000 traffic
-identities across up to 60 frames/ten minutes. Coverage and truncation are shown;
-increasing browser zoom does not recover omitted observations.
+The server accepts up to 64 MiB of decoded summaries per round and keeps
+2,000 traffic identities across up to 60 frames in a ten-minute window.
+The Collectors page shows gaps and per-node upload sizes.
 
 `TestLargeTopologyScopeAndBudget` and `BenchmarkTopology2000Nodes` exercise a
-synthetic 2,000-node inventory with 2,000 traffic identities. They validate graph
-aggregation and bounds, not full collection at that cluster size. For continuous
-full-cluster collection at that size, node-local collection, watched inventory,
-compact uploads and partitioned aggregation are still required. The current
-deployment is not a distributed collector and is not certified for 2,000 nodes.
+synthetic 2,000-node inventory with 2,000 traffic identities. Live collection
+has been verified on the two-node KIND demo. Cluster-wide inventory updates,
+report ingestion and graph retention still need end-to-end capacity testing.
