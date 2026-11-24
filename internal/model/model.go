@@ -24,13 +24,15 @@ type Inventory struct {
 
 // NodeSummary contains the derived observations from one local collection.
 type NodeSummary struct {
-	OmittedPaths int                    `json:"omittedPaths,omitempty"`
-	Flows        int                    `json:"flows"`
-	Offloaded    int                    `json:"offloaded"`
-	Traffic      []TrafficObservation   `json:"traffic,omitempty"`
-	Findings     []Finding              `json:"findings,omitempty"`
-	OffloadNode  OffloadNode            `json:"offloadNode"`
-	Paths        []CollectorOffloadPath `json:"paths,omitempty"`
+	TestPaths        []TestPathSample       `json:"testPaths,omitempty"`
+	TestPathsLimited bool                   `json:"testPathsLimited,omitempty"`
+	OmittedPaths     int                    `json:"omittedPaths,omitempty"`
+	Flows            int                    `json:"flows"`
+	Offloaded        int                    `json:"offloaded"`
+	Traffic          []TrafficObservation   `json:"traffic,omitempty"`
+	Findings         []Finding              `json:"findings,omitempty"`
+	OffloadNode      OffloadNode            `json:"offloadNode"`
+	Paths            []CollectorOffloadPath `json:"paths,omitempty"`
 }
 
 type CollectorOffloadPath struct {
@@ -169,6 +171,8 @@ type Network struct {
 }
 
 type View struct {
+	TestPaths         []TestPathSample            `json:"-"`
+	TestPathsLimited  map[string]bool             `json:"-"`
 	Offload           OffloadReport               `json:"-"`
 	OffloadIssues     []OffloadIssue              `json:"offloadIssues"`
 	OffloadIssueCount int                         `json:"offloadIssueCount"`

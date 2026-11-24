@@ -63,6 +63,17 @@ func Handler(a *app.App, token string) http.Handler {
 		options, err := a.TrafficTest.Options(r.Context())
 		respond(w, options, err)
 	})
+	mux.HandleFunc("GET /api/traffic-test/runs", func(w http.ResponseWriter, r *http.Request) { respond(w, a.TrafficTest.List(), nil) })
+	mux.HandleFunc("GET /api/traffic-test/runs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		run := a.TrafficTest.Lookup(r.PathValue("id"))
+		if run == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "This traffic test is no longer in the retained history."})
+			return
+		}
+		respond(w, run, nil)
+	})
 	mux.HandleFunc("GET /api/traffic-test", func(w http.ResponseWriter, r *http.Request) { respond(w, a.TrafficTest.Status(), nil) })
 	mux.HandleFunc("POST /api/traffic-test", func(w http.ResponseWriter, r *http.Request) {
 		var request flowtest.Request

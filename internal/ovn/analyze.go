@@ -22,7 +22,7 @@ func Analyze(s model.Snapshot, previous *model.Snapshot) model.View {
 }
 
 func analyze(s model.Snapshot, previous *model.Snapshot, attachments []Attachment, hosts map[string]string, prepared *datapath.Sample) model.View {
-	v := model.View{CollectedAt: s.CapturedAt, Findings: []model.Finding{}, Nodes: []model.NodeStatus{}, Pods: []model.Endpoint{}, Errors: append([]string{}, s.Inventory.Errors...), Connections: s.Inventory.Resources["clusternetworkconnects"]}
+	v := model.View{TestPathsLimited: map[string]bool{}, CollectedAt: s.CapturedAt, Findings: []model.Finding{}, Nodes: []model.NodeStatus{}, Pods: []model.Endpoint{}, Errors: append([]string{}, s.Inventory.Errors...), Connections: s.Inventory.Resources["clusternetworkconnects"]}
 	traffic := newTrafficIndex(s.Inventory, attachments)
 	if hosts != nil {
 		traffic.hosts = hosts
@@ -46,6 +46,8 @@ func analyze(s model.Snapshot, previous *model.Snapshot, attachments []Attachmen
 	}
 	for _, n := range s.Nodes {
 		if m := n.Summary; m != nil {
+			v.TestPaths = append(v.TestPaths, m.TestPaths...)
+			v.TestPathsLimited[n.Name] = m.TestPathsLimited
 			v.Nodes = append(v.Nodes, model.NodeStatus{Name: n.Name, CapturedAt: flowTime(n), Collection: n.Collection, Errors: n.Errors, Flows: m.Flows, Offloaded: m.Offloaded})
 			v.Findings = append(v.Findings, m.Findings...)
 			v.Traffic = append(v.Traffic, m.Traffic...)
@@ -223,6 +225,9 @@ func analyze(s model.Snapshot, previous *model.Snapshot, attachments []Attachmen
 			}
 			p.Signature += "/" + p.Network + "/" + p.Source.UID + "/" + p.Destination.UID
 		}
+		testPaths, limited := sampleTestPaths(n, traffic.testPorts[n.Name], allPaths, offNode.State)
+		v.TestPaths = append(v.TestPaths, testPaths...)
+		v.TestPathsLimited[n.Name] = limited
 		v.Offload.Nodes = append(v.Offload.Nodes, offNode)
 		v.Offload.Paths = append(v.Offload.Paths, offPaths...)
 

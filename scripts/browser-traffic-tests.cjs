@@ -13,6 +13,12 @@ module.exports=async function checkTrafficPicker(page){
   const testSource=page.locator('#traffic-test-source'),testDestination=page.locator('#traffic-test-destination');
   await page.locator('#traffic-test-submit:enabled').waitFor();
   if(await testSource.inputValue()!=='kind-worker'||await testDestination.inputValue()!=='kind-worker2')throw Error('Test picker lost topology link direction');
+  const mode=page.locator('#test-mode'), minimum=page.locator('#test-min');
+  if(await mode.inputValue()!=='connectivity'||!await minimum.isDisabled())throw Error('Default iperf test must be a connectivity check');
+  await mode.selectOption('throughput');
+  if(!await page.locator('#traffic-test-submit').isDisabled())throw Error('Throughput check enabled without a minimum');
+  await minimum.fill('0.0005');
+  if(await page.locator('#test-rate').inputValue()!=='1'||!await page.locator('#traffic-test-submit').isEnabled())throw Error('Threshold changed the sender rate');
   await page.locator('#traffic-test-profile').selectOption('ib-read-bw');
   if(!await page.locator('#traffic-test-submit').isDisabled())throw Error('RDMA test enabled without a device resource');
   await page.locator('#traffic-test-profile').selectOption('http');

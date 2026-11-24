@@ -235,6 +235,15 @@ func validSummary(n model.NodeSnapshot) bool {
 			return false
 		}
 	}
+	sampleAt := n.FlowCapturedAt
+	if sampleAt.IsZero() {
+		sampleAt = n.CapturedAt
+	}
+	for _, p := range m.TestPaths {
+		if p.Node != n.Name || p.PodUID == "" || !p.At.Equal(sampleAt) {
+			return false
+		}
+	}
 	for _, p := range m.Paths {
 		if p.Path.Node != n.Name {
 			return false

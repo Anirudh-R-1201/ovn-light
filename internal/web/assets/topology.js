@@ -176,7 +176,7 @@ async function inspectTopologyEdge(id){
     const source=c?.source?.node || g.nodes.find(n=>n.id===e.source)?.node;
     const destination=c?.destination?.node || g.nodes.find(n=>n.id===e.destination)?.node;
     openTrafficTest(source,destination,e.network);
-  }));
+  }),button('Traffic test history',()=>page('offload')));
   const body=text('div','','topology-connection-detail');body.id='topology-connection-detail';root.append(body);
   picker.onchange=()=>{topologyState.connection=picker.value;renderTopologyConnection(members.find(c=>c.id===picker.value));};picker.onchange();
  }catch(e){$('topology-detail').replaceChildren(text('p',e.message,'error'));}

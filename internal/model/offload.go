@@ -119,3 +119,15 @@ type OffloadIssue struct {
 	Source      Endpoint `json:"source"`
 	Destination Endpoint `json:"destination"`
 }
+
+// TestPathSample anchors a reconstructed OVS path to a temporary pod's local
+// datapath port. Match retains masks so the server can distinguish a shared
+// megaflow from an exact match for the selected test socket.
+type TestPathSample struct {
+	PodUID   string            `json:"podUID"`
+	Node     string            `json:"node"`
+	Outbound bool              `json:"outbound"`
+	At       time.Time         `json:"at"`
+	Match    map[string]string `json:"match"`
+	Stages   []OffloadStage    `json:"stages"`
+}

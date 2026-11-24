@@ -111,7 +111,8 @@ func (a *App) Load(s model.Snapshot) {
 	defer a.mu.Unlock()
 	a.offload.Grace = a.OffloadGrace
 	v.OffloadIssues = a.offload.Update(v.Offload)
-	a.TrafficTest.Observe(v, a.offload.Latest(), s.Inventory.Pods)
+	a.TrafficTest.Observe(v, a.offload.Latest(), s.Inventory)
+	v.TestPaths, v.TestPathsLimited = nil, nil
 	v.OffloadIssueCount = len(v.OffloadIssues)
 	if len(v.OffloadIssues) > 100 {
 		v.OffloadIssues = v.OffloadIssues[:100]

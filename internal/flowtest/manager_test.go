@@ -5,7 +5,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
@@ -29,7 +32,7 @@ func TestStartCrossNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []Request{{"a", "a", "default", "", ""}, {"a", "b", "blue", "", ""}, {"a", "unknown", "default", "", ""}} {
+	for _, bad := range []Request{{SourceNode: "a", DestinationNode: "a", Network: "default"}, {SourceNode: "a", DestinationNode: "b", Network: "blue"}, {SourceNode: "a", DestinationNode: "unknown", Network: "default"}} {
 		if _, err := manager.Start(ctx, bad); err == nil {
 			t.Fatalf("accepted %+v", bad)
 		}
@@ -165,5 +168,58 @@ func TestRestoreLegacyRun(t *testing.T) {
 	r := m.Status().Run
 	if r.Test != defaultTest || r.Case != crossPod || r.ID != "old" {
 		t.Fatal(r)
+	}
+}
+
+func TestTrafficHistoryRetentionAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	m, err := New(fake.NewClientset(), "image", "", "", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < historyLimit+3; i++ {
+		now := time.Now().UTC()
+		m.replaceLocked(&Run{ID: strconv.Itoa(i), Finished: &now, Phase: "completed", Nodes: []NodeEvidence{{Node: "node-a", Flows: []ObservedFlow{{Direction: "client → server"}}}}})
+	}
+	if err = m.saveLocked(); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := New(fake.NewClientset(), "image", "", "", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summaries := restored.List()
+	if len(summaries) != historyLimit || summaries[0].ID != strconv.Itoa(historyLimit+2) || summaries[historyLimit-1].ID != "3" || summaries[0].Nodes != nil || restored.Lookup("2") != nil {
+		t.Fatal(summaries)
+	}
+	detail := restored.Lookup("3")
+	if len(detail.Nodes[0].Flows) != 1 {
+		t.Fatal(detail)
+	}
+	detail.Nodes[0].Flows = nil
+	if len(restored.Lookup("3").Nodes[0].Flows) != 1 {
+		t.Fatal("result changed through caller")
+	}
+}
+
+func TestEvaluatorSettings(t *testing.T) {
+	m, err := New(fake.NewClientset(), "image", "", "", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []Request{
+		{Test: "http", TestSettings: TestSettings{MinimumGbps: ptr.To(15.0)}},
+		{Test: "iperf-tcp", TestSettings: TestSettings{MinimumGbps: ptr.To(-1.0)}},
+		{Test: "iperf-tcp", TestSettings: TestSettings{SenderMbps: 15000}},
+	} {
+		if _, err := m.Start(context.Background(), q); err == nil || strings.Contains(err.Error(), "network") {
+			t.Fatalf("invalid settings accepted: %v", err)
+		}
+	}
+	q := Request{Test: "iperf-tcp", TestSettings: TestSettings{MinimumGbps: ptr.To(15.0), SenderMbps: 20000}}
+	j := jobSpec("image", "", "check", q)
+	run := runFromJob(j)
+	if *run.MinimumGbps != 15 || run.SenderMbps != 20000 {
+		t.Fatal(run)
 	}
 }

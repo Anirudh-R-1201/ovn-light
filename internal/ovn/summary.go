@@ -36,7 +36,7 @@ func Project(inv model.Inventory) AnalysisContext {
 func Summarize(n model.NodeSnapshot, previous *model.Snapshot, x AnalysisContext, sample datapath.Sample) model.NodeSnapshot {
 	s := model.Snapshot{Inventory: x.Inventory, Nodes: []model.NodeSnapshot{n}, CapturedAt: n.CapturedAt}
 	v := analyze(s, previous, x.Attachments, x.Hosts, &sample)
-	m := &model.NodeSummary{Flows: v.Nodes[0].Flows, Offloaded: v.Nodes[0].Offloaded, Findings: v.Findings, Traffic: groupTraffic(v.Traffic), OffloadNode: v.Offload.Nodes[0]}
+	m := &model.NodeSummary{TestPaths: v.TestPaths, TestPathsLimited: v.TestPathsLimited[n.Name], Flows: v.Nodes[0].Flows, Offloaded: v.Nodes[0].Offloaded, Findings: v.Findings, Traffic: groupTraffic(v.Traffic), OffloadNode: v.Offload.Nodes[0]}
 	for _, p := range v.Offload.Paths {
 		m.Paths = append(m.Paths, model.CollectorOffloadPath{Path: p, Signature: p.Signature, Datapath: p.Datapath, Complete: p.SampleComplete, Eligible: p.Eligible, CTProblem: p.CTProblem, DiagnosticsAt: p.DiagnosticsAt})
 	}

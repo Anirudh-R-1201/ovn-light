@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from evalConfig import Config as EvaluationConfig
+from evaluator import Evaluator
 from testConfig import ConfigDescriptor, TestConfig
 from testSettings import TestSettings
 from tftbase import TargetAccessMode, TftResultBuilder
@@ -74,7 +76,7 @@ def suite_config(src, dst):
     client_args = []
     server_args = []
     if TEST in IPERF:
-        client_args = ["-b", "1M", "-P", "1", "--cport", "35201"]
+        client_args = ["-b", os.environ.get("SENDER_MBPS", "1") + "M", "-P", "1", "--cport", "35201"]
     elif TEST == "simple":
         client_args = ["--bufsize", "1024", "--sleep", "0.02"]
     elif TEST == "ib-send-bw":
@@ -175,6 +177,17 @@ def execute():
     for key in ("bps", "transactionsPerSecond"):
         if key in measured and not (math.isfinite(measured[key]) and measured[key] > 0):
             raise RuntimeError(f"{TEST} did not report a positive {key} measurement")
+    if threshold := os.environ.get("MINIMUM_GBPS"):
+        minimum = float(threshold)
+        config = EvaluationConfig.parse({result.tft_metadata.test_type.name: [
+            {"id": CASE, "Normal": {"threshold": minimum}}
+        ]})
+        verdict = Evaluator(config).eval_flow_test_output(result).eval_result
+        if result.bitrate_gbps.is_na or verdict is None:
+            raise RuntimeError("The upstream suite returned no throughput evaluation")
+        measured["evaluation"] = {"passed": verdict.success, "minimumGbps": minimum,
+                                  "rxGbps": result.bitrate_gbps.rx, "txGbps": result.bitrate_gbps.tx,
+                                  "reason": verdict.msg}
     return measured
 
 

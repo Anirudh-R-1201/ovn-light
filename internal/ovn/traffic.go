@@ -13,14 +13,22 @@ import (
 )
 
 type trafficIndex struct {
+	testPorts   map[string]map[string]string
 	attachments []Attachment
 	ip, mac     map[string][]model.Endpoint
 	hosts       map[string]string
 }
 
 func newTrafficIndex(inv model.Inventory, attachments []Attachment) trafficIndex {
-	x := trafficIndex{attachments: attachments, ip: map[string][]model.Endpoint{}, mac: map[string][]model.Endpoint{}, hosts: map[string]string{}}
+	x := trafficIndex{testPorts: map[string]map[string]string{}, attachments: attachments, ip: map[string][]model.Endpoint{}, mac: map[string][]model.Endpoint{}, hosts: map[string]string{}}
 	for _, a := range attachments {
+		ep := a.Endpoint
+		if ep.Namespace == "ovn-light-tests" && ep.Network == "default" && a.Primary && ep.Labels["ovn-light.io/run"] != "" {
+			if x.testPorts[a.Node] == nil {
+				x.testPorts[a.Node] = map[string]string{}
+			}
+			x.testPorts[a.Node][a.LogicalPort] = ep.UID
+		}
 		x.ip[a.Endpoint.Network+"/"+a.Endpoint.IP] = append(x.ip[a.Endpoint.Network+"/"+a.Endpoint.IP], a.Endpoint)
 		if a.MAC != "" {
 			x.mac[a.Endpoint.Network+"/"+a.MAC] = append(x.mac[a.Endpoint.Network+"/"+a.MAC], a.Endpoint)

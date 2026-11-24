@@ -2,14 +2,17 @@
 package flowtest
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +33,13 @@ const namespace = "ovn-light-tests"
 const jobName = "cross-node-tcp"
 const runLabel = "ovn-light.io/run"
 
+type TestSettings struct {
+	MinimumGbps *float64 `json:"minimumGbps,omitempty"`
+	SenderMbps  int      `json:"senderMbps,omitempty"`
+}
+
 type Request struct {
+	TestSettings
 	SourceNode      string `json:"sourceNode"`
 	DestinationNode string `json:"destinationNode"`
 	Network         string `json:"network"`
@@ -48,6 +57,7 @@ type Manager struct {
 	operation                 sync.Mutex
 	mu                        sync.Mutex
 	run                       *Run
+	previous                  []*Run
 }
 
 func New(client kubernetes.Interface, image, device, rdma, dir string) (*Manager, error) {
@@ -59,19 +69,33 @@ func New(client kubernetes.Interface, image, device, rdma, dir string) (*Manager
 	m := &Manager{rdma: rdma, wake: make(chan struct{}, 1), client: client, image: image, device: device, file: filepath.Join(dir, "traffic-test.json")}
 	raw, err := os.ReadFile(m.file)
 	if err == nil {
-		err = json.Unmarshal(raw, &m.run)
+		if bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
+			var runs []*Run
+			err = json.Unmarshal(raw, &runs)
+			if err == nil && len(runs) > 0 {
+				m.run, m.previous = runs[0], runs[1:min(len(runs), historyLimit)]
+			}
+		} else {
+			err = json.Unmarshal(raw, &m.run)
+		}
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if m.run != nil && m.run.Test == "" && m.run.Case == "" {
+	for _, run := range append([]*Run{m.run}, m.previous...) {
+		if run == nil {
+			continue
+		}
 		// Earlier releases stored only the cross-node TCP profile.
-		m.run.Test, m.run.Case = defaultTest, crossPod
+		profile, _ := lookupProfile(run.Test)
+		scenario, _ := lookupCase(run.Case)
+		run.Test, run.Case = profile.ID, scenario.ID
+		run.TestName, run.CaseName = profile.Name, scenario.Name
 	}
 	return m, nil
 }
 func (m *Manager) saveLocked() error {
-	b, err := json.Marshal(m.run)
+	b, err := json.Marshal(append([]*Run{m.run}, m.previous...))
 	if err != nil {
 		return err
 	}
@@ -80,6 +104,61 @@ func (m *Manager) saveLocked() error {
 	}
 	return os.Rename(m.file+".tmp", m.file)
 }
+
+const historyLimit = 30
+
+func (m *Manager) replaceLocked(next *Run) {
+	if m.run != nil {
+		if m.run.Finished == nil {
+			now := time.Now().UTC()
+			m.run.Finished, m.run.Phase = &now, "failed"
+			m.run.Traffic = &Traffic{Error: "The test Job was replaced before its result was recorded."}
+		}
+		m.previous = append([]*Run{m.run}, m.previous[:min(len(m.previous), historyLimit-2)]...)
+	}
+	m.run = next
+}
+
+// List omits flow details so refreshing the main page stays cheap.
+func (m *Manager) List() []Run {
+	result := []Run{}
+	if m == nil {
+		return result
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.run == nil {
+		return result
+	}
+	for _, run := range append([]*Run{m.run}, m.previous...) {
+		summary := *run
+		summary.Nodes = nil
+		result = append(result, summary)
+	}
+	return result
+}
+
+func (m *Manager) Lookup(id string) *Run {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, run := range append([]*Run{m.run}, m.previous...) {
+		if run != nil && run.ID == id {
+			return copyRun(run)
+		}
+	}
+	return nil
+}
+
+func copyRun(run *Run) *Run {
+	b, _ := json.Marshal(run)
+	var result *Run
+	_ = json.Unmarshal(b, &result)
+	return result
+}
+
 func (m *Manager) Status() Status {
 	if m == nil {
 		return Status{}
@@ -88,19 +167,18 @@ func (m *Manager) Status() Status {
 	defer m.mu.Unlock()
 	result := Status{Enabled: true}
 	if m.run != nil {
-		b, _ := json.Marshal(m.run)
-		_ = json.Unmarshal(b, &result.Run)
+		result.Run = copyRun(m.run)
 	}
 	return result
 }
-func (m *Manager) Observe(v model.View, r model.OffloadReport, pods []core.Pod) {
+func (m *Manager) Observe(v model.View, r model.OffloadReport, inventory model.Inventory) {
 	if m == nil {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.run != nil && m.run.Finished == nil {
-		m.run.observe(v, r, pods)
+		m.run.observe(v, r, inventory)
 	}
 }
 
@@ -133,9 +211,16 @@ func jobSpec(image, device, id string, q Request) *batch.Job {
 		},
 		VolumeMounts: []core.VolumeMount{{Name: "tmp", MountPath: "/tmp"}},
 	}
+	settings, _ := json.Marshal(q.TestSettings)
+	if q.MinimumGbps != nil {
+		runner.Env = append(runner.Env, core.EnvVar{Name: "MINIMUM_GBPS", Value: strconv.FormatFloat(*q.MinimumGbps, 'g', -1, 64)})
+	}
+	if q.SenderMbps > 0 {
+		runner.Env = append(runner.Env, core.EnvVar{Name: "SENDER_MBPS", Value: strconv.Itoa(q.SenderMbps)})
+	}
 	return &batch.Job{
 		ObjectMeta: meta.ObjectMeta{Name: jobName, Labels: labels, Annotations: map[string]string{
-			"ovn-light.io/test": profile.ID, "ovn-light.io/case": testCase.ID,
+			"ovn-light.io/settings": string(settings), "ovn-light.io/test": profile.ID, "ovn-light.io/case": testCase.ID,
 			"ovn-light.io/source": q.SourceNode, "ovn-light.io/destination": q.DestinationNode,
 		}},
 		Spec: batch.JobSpec{
@@ -163,7 +248,13 @@ func runFromJob(j *batch.Job) *Run {
 	}
 	profile, _ := lookupProfile(j.Annotations["ovn-light.io/test"])
 	testCase, _ := lookupCase(j.Annotations["ovn-light.io/case"])
-	return &Run{Test: profile.ID, Case: testCase.ID, ID: j.Labels[runLabel], JobUID: string(j.UID), Network: "default", Phase: "running", Source: Endpoint{Node: src}, Destination: Endpoint{Node: dst}, Started: j.CreationTimestamp.Time, Nodes: nodes}
+	var settings TestSettings
+	_ = json.Unmarshal([]byte(j.Annotations["ovn-light.io/settings"]), &settings)
+	return &Run{
+		TestSettings: settings, Test: profile.ID, TestName: profile.Name, Case: testCase.ID, CaseName: testCase.Name,
+		ID: j.Labels[runLabel], JobUID: string(j.UID), Network: "default", Phase: "running",
+		Source: Endpoint{Node: src}, Destination: Endpoint{Node: dst}, Started: j.CreationTimestamp.Time, Nodes: nodes,
+	}
 }
 func (m *Manager) Start(ctx context.Context, q Request) (Status, error) {
 	if m == nil {
@@ -176,6 +267,19 @@ func (m *Manager) Start(ctx context.Context, q Request) (Status, error) {
 	testCase, ok := lookupCase(q.Case)
 	if !ok || testCase.Service && !profile.Service {
 		return Status{}, fmt.Errorf("unsupported test case for %s", profile.Name)
+	}
+	iperf := profile.ID == defaultTest || profile.ID == "iperf-udp"
+	if q.MinimumGbps != nil {
+		value := *q.MinimumGbps
+		if !(iperf || profile.RDMA || profile.ID == "netperf-tcp-stream") || value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+			return Status{}, fmt.Errorf("choose a bandwidth test and a positive, finite minimum in Gbit/s")
+		}
+	}
+	if q.SenderMbps < 0 || q.SenderMbps > 1000000 || q.SenderMbps != 0 && (!iperf || q.MinimumGbps == nil) {
+		return Status{}, fmt.Errorf("choose an iperf throughput check to set a sender rate of 1–1000000 Mbit/s")
+	}
+	if iperf && q.SenderMbps == 0 {
+		q.SenderMbps = 1
 	}
 	if q.Network != "default" {
 		return Status{}, fmt.Errorf("choose the default network")
@@ -249,7 +353,7 @@ func (m *Manager) Start(ctx context.Context, q Request) (Status, error) {
 		return Status{}, err
 	}
 	m.mu.Lock()
-	m.run = runFromJob(j)
+	m.replaceLocked(runFromJob(j))
 	err = m.saveLocked()
 	m.mu.Unlock()
 	if err != nil {
@@ -310,7 +414,7 @@ func (m *Manager) reconcile(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	if m.run == nil || m.run.JobUID != string(j.UID) {
-		m.run = runFromJob(j)
+		m.replaceLocked(runFromJob(j))
 	}
 	finished := m.run.Finished != nil
 	m.mu.Unlock()
@@ -359,6 +463,17 @@ func (m *Manager) reconcile(ctx context.Context) error {
 		m.run.Finished = &now
 		m.run.Traffic = &result
 		m.run.Phase = "completed"
+		if result.Delivered && m.run.MinimumGbps != nil {
+			eval := result.Evaluation
+			switch {
+			case eval == nil || eval.MinimumGbps != *m.run.MinimumGbps:
+				result.Evaluation = nil
+				m.run.Phase = "failed"
+				result.Error = "The runner did not return the requested throughput evaluation."
+			case !eval.Passed:
+				m.run.Phase = "failed"
+			}
+		}
 		if !result.Delivered {
 			m.run.Phase = "failed"
 			if result.Error == "" {

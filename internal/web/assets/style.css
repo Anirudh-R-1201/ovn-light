@@ -45,3 +45,10 @@
 .traffic-test-nodes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:1rem}
 #traffic-test-result .record{margin-top:.8rem}
 #traffic-test-result summary{cursor:pointer}
+
+.traffic-test-nodes [hidden]{display:none}
+#offload-test-runs,.test-flow{margin:1rem 0}
+#offload-test-runs .record,#issues-test-runs .record{margin:.5rem 0;gap:1rem;flex-wrap:wrap}
+#offload-test-runs .record>div,#issues-test-runs .record>div{flex:1;min-width:min(100%,16rem)}
+#run-history-body .record{margin-top:.8rem}
+.test-flow{padding-left:1rem}

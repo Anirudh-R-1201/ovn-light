@@ -7,6 +7,7 @@ function offloadTitle(p){return `${endpoint(p.source)} → ${endpoint(p.destinat
 function offloadTime(t){return t&&Date.parse(t)>0?new Date(t).toLocaleTimeString():'unavailable'}
 function offloadRaw(label,raw){const d=text('details','');d.append(text('summary',label),text('pre',raw));return d}
 async function loadOffload(){
+ loadTestHistory();
  const request=++offloadRequest;
  fillSelect($('offload-node'),list(state.nodes).map(n=>({label:n.name,value:n.name})),'All nodes');
  fillSelect($('offload-network'),list(state.networks).map(n=>({label:n.name,value:n.id})),'All networks');

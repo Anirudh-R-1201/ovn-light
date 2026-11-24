@@ -20,8 +20,27 @@ function selectTestProfile(previousCase,src,dst) {
   const old=catalog.cases.find(c=>c.id===previousCase);
   const fallback=choices.find(c=>c.sameNode===Boolean(old?.sameNode))?.id;
   fillTestChoices('traffic-test-case',choices,choices.some(c=>c.id===previousCase)?previousCase:fallback);
-  $('traffic-test-description').textContent=profile.description;
+  configureTestMode();
   selectTestNodes(src,dst);
+}
+
+function configureTestMode() {
+  const profile=testProfile();
+  if(!profile)return;
+  const iperf=profile.id.startsWith('iperf-');
+  const bandwidth=iperf || profile.rdma || profile.id==='netperf-tcp-stream';
+  const mode=$('test-mode');
+  mode.options[0].textContent=iperf?'Connectivity check':'Measure only';
+  if(!bandwidth)mode.value='connectivity';
+  $('test-mode-label').hidden=!bandwidth;
+  const evaluate=bandwidth && mode.value==='throughput';
+  for(const [prefix,enabled] of [['test-min',evaluate],['test-rate',evaluate && iperf]]) {
+    $(prefix+'-label').hidden=!enabled;
+    $(prefix).disabled=!enabled;
+  }
+  $('traffic-test-description').textContent=evaluate && iperf ?
+    'One paced stream for 120 seconds. The upstream evaluator compares the measured throughput with your minimum.' : profile.description;
+  updateTestForm();
 }
 
 function selectTestNodes(src,dst) {
@@ -47,20 +66,22 @@ function updateTestDestination(dst) {
 function updateTestForm() {
   const src = $('traffic-test-source').value, dst = $('traffic-test-destination').value;
   const reason = testContext || (!testEnabled ? 'Traffic tests require a live, write-enabled server with the test runner installed.' :
-    testRunning ? 'One test is running. You can close this dialog and return to its result.' :
+    testRunning ? 'One test is running. Follow it in Traffic test history on Hardware Offload.' :
     testProfile()?.rdma && !catalog.rdmaResource ? 'This test requires an RDMA device resource configured on the runner.' :
     !src || !dst ? 'No eligible node pair for this test case. Check node readiness and device capacity.' : '');
   $('traffic-test-message').textContent = reason;
-  $('traffic-test-submit').disabled = Boolean(reason) || testSubmitting || !testCase();
+  const invalidMinimum=!$('test-min').disabled && !($('test-min').valueAsNumber>0);
+  $('traffic-test-submit').disabled = Boolean(reason) || invalidMinimum || (!$('test-rate').disabled && !$('test-rate').validity.valid) || testSubmitting || !testCase();
 }
 
-function testResult(run) {
-  const root = $('traffic-test-result');
+function testResult(run, root=$('traffic-test-result')) {
+  const expanded=root.dataset.run===run?.id ? Array.from(root.querySelectorAll('details[open][data-flow]'),d=>d.dataset.flow) : [];
   root.replaceChildren();
   if (!run) return;
-  const profile=catalog.profiles.find(p=>p.id===(run.test||'iperf-tcp'));
-  const scenario=catalog.cases.find(c=>c.id===(run.case||'POD_TO_POD_DIFF_NODE'));
-  root.append(text('h3',run.finished ? 'Last test' : 'Current test'), text('strong',[profile?.name||run.test,scenario?.name||run.case].filter(Boolean).join(' · ')),
+  root.dataset.run=run.id;
+  const profile=catalog?.profiles.find(p=>p.id===(run.test||'iperf-tcp'));
+  const scenario=catalog?.cases.find(c=>c.id===(run.case||'POD_TO_POD_DIFF_NODE'));
+  root.append(text('h3',run.finished ? 'Completed run' : 'Current test'), text('strong',[run.testName||profile?.name||run.test,run.caseName||scenario?.name||run.case].filter(Boolean).join(' · ')),
     text('p',run.source.node+' → '+run.destination.node+' · '+new Date(run.started).toLocaleString()));
   const traffic = run.traffic;
   if (traffic?.delivered) {
@@ -70,12 +91,23 @@ function testResult(run) {
     if(traffic.transactionsPerSecond!=null)stats.push(traffic.transactionsPerSecond.toFixed(2)+' transactions/s');
     if(traffic.lostPercent!=null)stats.push(traffic.lostPercent.toFixed(2)+'% loss');
     if(traffic.jitterMs!=null)stats.push(traffic.jitterMs.toFixed(3)+' ms jitter');
-    root.append(text('strong','Test passed'),text('p',stats.join(' · ')));
-    if(scenario?.service && traffic.targetIP)root.append(text('p','Service IP '+traffic.targetIP+' → server '+traffic.destinationIP));
+    root.append(badge(run.test==='iperf-tcp'?'TCP delivery verified':'Traffic delivered','green'),text('p',stats.join(' · ')));
+    if((scenario?.service || run.case?.includes('CLUSTER_IP')) && traffic.targetIP)root.append(text('p','Service IP '+traffic.targetIP+' → server '+traffic.destinationIP));
   } else if (traffic) root.append(text('strong','Test failed'),text('p',traffic.error || 'No completed transfer.'));
   else root.append(text('p','Test in progress. Waiting for the runner and collector samples.'));
+  if(run.minimumGbps!=null){
+    const e=traffic?.evaluation;
+    root.append(text('h3','Throughput evaluation'),text('p','Minimum '+run.minimumGbps+' Gbit/s'+(run.senderMbps?' · sender rate '+run.senderMbps+' Mbit/s':'')));
+    if(e){
+      root.append(badge(e.passed?'Threshold passed':'Below threshold',e.passed?'green':'red'));
+      root.append(text('p',[['TX',e.txGbps],['RX',e.rxGbps]].filter(([,v])=>v!=null).map(([label,v])=>label+' '+v+' Gbit/s').join(' · ')));
+      if(e.reason)root.append(text('p',e.reason,'note'));
+    }else root.append(text('p',run.finished?(traffic?.error || 'No throughput measurement to evaluate.'):'Awaiting measurement.','note'));
+  }else if(traffic?.delivered && run.test?.startsWith('iperf-')){
+    root.append(text('p','Connectivity check · sender rate '+(run.senderMbps||1)+' Mbit/s · no throughput threshold.','note'));
+  }
   if (run.drop) root.append(text('p','Matching policy drop · '+run.drop));
-  for (const n of run.nodes) {
+  for (const n of run.nodes || []) {
     const card = text('section','','record');
     card.append(text('strong',n.node));
     for(const [role,endpoint] of [['Client',run.source],['Server',run.destination]]){
@@ -83,8 +115,8 @@ function testResult(run) {
       if(endpoint.node===n.node && ip)card.append(text('p', [role,endpoint.pod,ip].filter(Boolean).join(' · ')));
     }
     if (n.state === 'disabled') card.append(text('p','Hardware offload disabled'));
-    else if (!profile?.protocol) card.append(text('p','OVS data-path correlation is unavailable for this test type.'));
-    else if (!n.paths?.length) card.append(text('p',run.finished ? 'Offload inconclusive. No active path matched the test data stream.' : 'Awaiting matching datapath evidence.'));
+    if(run.test?.startsWith('ib-'))card.append(text('p','RDMA data uses a separate datapath.'));
+    else renderTestFlows(card,n,run.finished);
     for (const p of n.paths || []) {
       const detail=text('details','');
       detail.append(text('summary',(offloadLabels[p.status] || p.status)+' · '+(p.tuple.sourceIP === run.source.ip ? 'client → server' : 'server → client')+(p.issue?' · persistent issue':'')),
@@ -99,6 +131,7 @@ function testResult(run) {
     if (n.limited) card.append(text('p','Additional evidence exceeded the result limit.','note'));
     root.append(card);
   }
+  for(const detail of root.querySelectorAll('details[data-flow]'))detail.open=expanded.includes(detail.dataset.flow);
 }
 
 async function refreshTest(seq) {
@@ -126,11 +159,14 @@ async function openTrafficTest(src,dst,network) {
     if(seq!==testSequence)return;
     catalog=options;
     fillTestChoices('traffic-test-profile',catalog.profiles,'iperf-tcp');
+    $('test-mode').value='connectivity';$('test-rate').value='1';$('test-min').value='';
     selectTestProfile(src && src===dst ? 'POD_TO_POD_SAME_NODE' : 'POD_TO_POD_DIFF_NODE',src,dst);
     await refreshTest(seq);
   }catch(e){if(seq===testSequence)$('traffic-test-message').textContent=e.message}
 }
 $('offload-run-test').onclick=()=>openTrafficTest($('offload-node').value,'',$('offload-network').value);
+$('test-mode').onchange=configureTestMode;
+$('test-min').oninput=$('test-rate').oninput=updateTestForm;
 $('traffic-test-profile').onchange=()=>selectTestProfile($('traffic-test-case').value,$('traffic-test-source').value,$('traffic-test-destination').value);
 $('traffic-test-case').onchange=()=>selectTestNodes($('traffic-test-source').value,$('traffic-test-destination').value);
 $('traffic-test-source').onchange=()=>updateTestDestination($('traffic-test-destination').value);
@@ -142,10 +178,86 @@ $('traffic-test-form').onsubmit=async e=>{
   testSubmitting=true;
   const seq=++testSequence;
   try {
-    const status=await api('traffic-test',{test:testProfile().id,case:testCase().id,sourceNode:$('traffic-test-source').value,destinationNode:$('traffic-test-destination').value,network:'default'});
+    const request={test:testProfile().id,case:testCase().id,sourceNode:$('traffic-test-source').value,destinationNode:$('traffic-test-destination').value,network:'default'};
+    if(!$('test-min').disabled)request.minimumGbps=$('test-min').valueAsNumber;
+    if(!$('test-rate').disabled)request.senderMbps=$('test-rate').valueAsNumber;
+    const status=await api('traffic-test',request);
+    loadTestHistory();
     if(seq!==testSequence)return;
     testSubmitting=false;testRunning=true;updateTestForm();testResult(status.run);refreshTest(seq);
   } catch(err) {
     if(seq===testSequence){testSubmitting=false;updateTestForm();$('traffic-test-message').textContent=err.message}
   }
 };
+
+function renderTestFlows(card,node,finished){
+  const flows=node.flows||[];
+  if(!flows.length){
+    card.append(text('p',finished?'No matching datapath flows were captured during this run.':'Awaiting a collector sample for these test pods.','note'));
+    return;
+  }
+  card.append(text('h4','Datapath flows'),text('p','Shared matches include wildcarded fields. Counters cover all packets matching the OVS rule.','note'));
+  for(const status of new Set(flows.map(f=>f.status))){
+    const group=text('details','');
+    group.dataset.flow=node.node+'/'+status;
+    const members=flows.filter(f=>f.status===status);
+    group.append(text('summary',(offloadLabels[status]||status)+' · '+members.length+' '+(members.length===1?'flow':'flows')));
+    for(const f of members){
+      const line=text('details','','test-flow');
+      line.dataset.flow=group.dataset.flow+'/'+f.id+'/'+f.direction;
+      line.append(text('summary','recirc '+f.recirc+' · '+f.inPort+' · '+f.direction),
+        text('p',(f.exact?'Exact test tuple':'Shared match on test pod port')+' · '+count(f.packets)+' packets · '+count(f.bytes)+' bytes · '+new Date(f.at).toLocaleTimeString(),'note'));
+      if(f.partialPackets)line.append(text('p',count(f.partialPackets)+' partial-offload packets'));
+      if(f.raw)line.append(text('pre',f.raw));
+      group.append(line);
+    }
+    card.append(group);
+  }
+}
+
+let testHistoryRequest=0, testHistoryTimer, selectedTestRun='';
+function runOutcome(run){
+  if(!run.finished)return ['Running','amber'];
+  if(run.traffic?.delivered && run.traffic.evaluation)return run.traffic.evaluation.passed?['Threshold passed','green']:['Below threshold','red'];
+  if(run.phase==='failed')return ['Failed','red'];
+  return [run.test?.startsWith('iperf-')?'Connectivity verified':'Traffic delivered','green'];
+}
+
+async function loadTestHistory(){
+  const compact=currentPage==='issues';
+  if(!compact && currentPage!=='offload')return;
+  const root=$(compact?'issues-test-runs':'offload-test-runs'), seq=++testHistoryRequest;
+  try{
+    const runs=await api('traffic-test/runs');
+    if(seq!==testHistoryRequest)return;
+    root.replaceChildren();
+    root.classList.toggle('hidden',compact && !runs.length);
+    const header=text('div','','section-title');
+    header.append(text('h2',compact?'Recent traffic tests':'Traffic test history'));
+    if(compact && runs.length>3)header.append(button('View all runs',()=>page('offload')));
+    root.append(header);
+    if(!runs.length)root.append(text('p','No traffic tests recorded.','note'));
+    for(const run of runs.slice(0,compact?3:30)){
+      const row=text('article','','record record-top'), label=text('div',''), [name,color]=runOutcome(run);
+      const title=run.minimumGbps!=null?'Throughput check':run.test?.startsWith('iperf-')?'Connectivity check':'Traffic test';
+      label.append(text('strong',title+' · '+(run.testName||run.test)+(run.minimumGbps!=null?' · minimum '+run.minimumGbps+' Gbit/s':'')),text('p',new Date(run.started).toLocaleString()+' · '+run.source.node+' → '+run.destination.node,'note'));
+      row.append(label,badge(name,color),button(run.finished?'View result':'View progress',()=>openTestResult(run.id)));
+      root.append(row);
+    }
+  }catch(e){if(seq===testHistoryRequest)root.replaceChildren(text('p',e.message,'error'))}
+}
+
+async function openTestResult(id){
+  clearTimeout(testHistoryTimer);
+  selectedTestRun=id;
+  const dialog=$('run-history-dialog'), root=$('run-history-body');
+  if(!dialog.open){root.replaceChildren(text('p','Loading test result…'));dialog.showModal()}
+  try{
+    const run=await api('traffic-test/runs/'+encodeURIComponent(id));
+    if(!dialog.open || selectedTestRun!==id)return;
+    testResult(run,root);
+    if(!run.finished)testHistoryTimer=setTimeout(()=>openTestResult(id),4000);
+    else loadTestHistory();
+  }catch(e){if(dialog.open && selectedTestRun===id)root.replaceChildren(text('p',e.message,'error'))}
+}
+$('run-history-dialog').addEventListener('close',()=>{selectedTestRun='';clearTimeout(testHistoryTimer)});

@@ -24,14 +24,14 @@ func TestCorrelateTestStream(t *testing.T) {
 	at := start.Add(time.Second)
 	path := model.OffloadPath{ID: "p", Node: "a", Network: "default", Tuple: tuple, Status: "partial", ObservedAt: at, PartialDelta: ptr.To(uint64(4)), Stages: []model.OffloadStage{{ID: "ufid", Recirc: "2", Status: "software", PartialDelta: ptr.To(uint64(4))}}, Conntrack: []model.OffloadCT{{Zone: "3", Original: "hardware", Reply: "software", CapturedAt: at}}}
 	report := model.OffloadReport{Nodes: []model.OffloadNode{{Name: "a", State: "enabled", CapturedAt: at, DiagnosticsAt: at}, {Name: "b", State: "disabled", CapturedAt: at, DiagnosticsAt: at}}, Paths: []model.OffloadPath{path}}
-	r.observe(model.View{}, report, nil)
+	r.observe(model.View{}, report, model.Inventory{})
 	if len(r.Nodes[0].Paths) != 0 {
 		t.Fatal("pre-run delta used")
 	}
 	at = at.Add(30 * time.Second)
 	report.Nodes[0].CapturedAt = at
 	report.Paths[0].ObservedAt = at
-	r.observe(model.View{}, report, nil)
+	r.observe(model.View{}, report, model.Inventory{})
 	if len(r.Nodes[0].Paths) != 1 || r.Nodes[1].State != "disabled" {
 		t.Fatal(r.Nodes)
 	}
@@ -63,7 +63,7 @@ func TestCorrelateTestStream(t *testing.T) {
 	at = at.Add(30 * time.Second)
 	report.Nodes[0].CapturedAt = at
 	report.Paths[0].ObservedAt = at
-	r.observe(model.View{}, report, nil)
+	r.observe(model.View{}, report, model.Inventory{})
 	p := r.Nodes[0].Paths[1]
 	if p.Status != "unknown" || p.Conntrack[0].Original != "" {
 		t.Fatal("stale CT used", p)
@@ -105,7 +105,7 @@ func TestAgentSummaryIdentifiesSoftwareRecirculation(t *testing.T) {
 		}
 		view := ovn.Analyze(model.Snapshot{Inventory: inv, CapturedAt: at, Nodes: []model.NodeSnapshot{received}}, nil)
 		store.Update(view.Offload)
-		run.observe(view, store.Latest(), inv.Pods)
+		run.observe(view, store.Latest(), inv)
 	}
 	if len(run.Nodes[0].Paths) != 1 {
 		t.Fatalf("test endpoints %v → %v, paths %+v", run.Source, run.Destination, run.Nodes[0].Paths)
@@ -151,5 +151,53 @@ func TestNetperfSeparatesControlFromData(t *testing.T) {
 	data.DestinationPort = "5201"
 	if run.matches(path) {
 		t.Fatal("control connection classified as data")
+	}
+}
+
+func TestMaskedSoftwareFlowsAreScopedToTestPortAndDirection(t *testing.T) {
+	now := time.Now().UTC()
+	r := Run{Started: now, Source: Endpoint{UID: "client", IP: "10.0.1.1", Node: "a"}, Destination: Endpoint{UID: "server", IP: "10.0.2.1", Node: "b"}}
+	n := NodeEvidence{Node: "b"}
+	sample := model.TestPathSample{At: now, PodUID: "server", Node: "b", Match: map[string]string{"eth_type": "0x0800", "ipv4.proto": "6", "ipv4.src": "10.0.1.0/24", "ipv4.dst": "10.0.2.1", "tcp.dst": "5201"}, Stages: []model.OffloadStage{{ID: "one", Status: "software", Packets: 4, Raw: "actions:42"}}}
+	r.recordTestFlows(&n, []model.TestPathSample{sample})
+	if len(n.Flows) != 1 || n.Flows[0].Exact || n.Flows[0].Raw != "actions:42" || n.Flows[0].Direction != "client → server" {
+		t.Fatal(n)
+	}
+	sample.Match["tcp.src"] = "35201"
+	sample.Match["ipv4.src"] = "10.0.1.1"
+	r.recordTestFlows(&n, []model.TestPathSample{sample})
+	if len(n.Flows) != 1 || !n.Flows[0].Exact {
+		t.Fatal(n)
+	}
+	for _, change := range []func(*model.TestPathSample){
+		func(p *model.TestPathSample) { p.PodUID = "other" }, func(p *model.TestPathSample) { p.Outbound = true }, func(p *model.TestPathSample) { p.Node = "a" }, func(p *model.TestPathSample) { p.At = now.Add(-time.Second) }, func(p *model.TestPathSample) { p.Match["tcp.src"] = "41000" },
+	} {
+		test := sample
+		change(&test)
+		dst := NodeEvidence{Node: "b"}
+		r.recordTestFlows(&dst, []model.TestPathSample{test})
+		if len(dst.Flows) != 0 {
+			t.Fatal(dst)
+		}
+	}
+}
+
+func TestServiceIPCanMatchBeforeOrAfterTranslation(t *testing.T) {
+	now := time.Now().UTC()
+	r := Run{Case: crossService, ServiceIP: "10.96.0.10", Started: now, Source: Endpoint{Node: "a", UID: "client", IP: "10.1.0.1"}, Destination: Endpoint{Node: "b", UID: "server", IP: "10.2.0.1"}}
+	for _, tc := range []struct {
+		address string
+		want    bool
+	}{{r.ServiceIP, true}, {r.Destination.IP, true}, {"10.96.0.11", false}} {
+		sample := model.TestPathSample{
+			PodUID: "client", Node: "a", Outbound: true, At: now,
+			Match:  map[string]string{"eth_type": "0x0800", "ipv4.proto": "6", "ipv4.src": r.Source.IP, "ipv4.dst": tc.address, "tcp.src": "35201", "tcp.dst": "5201"},
+			Stages: []model.OffloadStage{{ID: "f", Status: "hardware", Packets: 1, Raw: "actions:3"}},
+		}
+		n := NodeEvidence{Node: "a"}
+		r.recordTestFlows(&n, []model.TestPathSample{sample})
+		if (len(n.Flows) == 1 && n.Flows[0].Exact) != tc.want {
+			t.Errorf("destination %s: %+v", tc.address, n.Flows)
+		}
 	}
 }

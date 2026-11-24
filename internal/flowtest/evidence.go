@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/trozet/ovn-light/internal/model"
-	core "k8s.io/api/core/v1"
 )
 
 type Endpoint struct {
@@ -17,29 +16,42 @@ type Endpoint struct {
 	IP   string `json:"ip,omitempty"`
 }
 type NodeEvidence struct {
+	Flows   []ObservedFlow      `json:"flows,omitempty"`
 	Node    string              `json:"node"`
 	State   string              `json:"state"`
 	At      time.Time           `json:"at,omitempty"`
 	Paths   []model.OffloadPath `json:"paths,omitempty"`
 	Limited bool                `json:"limited,omitempty"`
 }
+type Evaluation struct {
+	Passed      bool     `json:"passed"`
+	MinimumGbps float64  `json:"minimumGbps"`
+	RXGbps      *float64 `json:"rxGbps,omitempty"`
+	TXGbps      *float64 `json:"txGbps,omitempty"`
+	Reason      string   `json:"reason,omitempty"`
+}
 type Traffic struct {
-	Test          string   `json:"test,omitempty"`
-	Case          string   `json:"case,omitempty"`
-	TargetIP      string   `json:"targetIP,omitempty"`
-	Transactions  float64  `json:"transactionsPerSecond,omitempty"`
-	Loss          *float64 `json:"lostPercent,omitempty"`
-	Jitter        *float64 `json:"jitterMs,omitempty"`
-	Delivered     bool     `json:"delivered"`
-	Bytes         int64    `json:"bytes,omitempty"`
-	BPS           float64  `json:"bps,omitempty"`
-	SourceIP      string   `json:"sourceIP,omitempty"`
-	DestinationIP string   `json:"destinationIP,omitempty"`
-	Error         string   `json:"error,omitempty"`
+	Evaluation    *Evaluation `json:"evaluation,omitempty"`
+	Test          string      `json:"test,omitempty"`
+	Case          string      `json:"case,omitempty"`
+	TargetIP      string      `json:"targetIP,omitempty"`
+	Transactions  float64     `json:"transactionsPerSecond,omitempty"`
+	Loss          *float64    `json:"lostPercent,omitempty"`
+	Jitter        *float64    `json:"jitterMs,omitempty"`
+	Delivered     bool        `json:"delivered"`
+	Bytes         int64       `json:"bytes,omitempty"`
+	BPS           float64     `json:"bps,omitempty"`
+	SourceIP      string      `json:"sourceIP,omitempty"`
+	DestinationIP string      `json:"destinationIP,omitempty"`
+	Error         string      `json:"error,omitempty"`
 }
 type Run struct {
+	TestSettings
+	TestName    string         `json:"testName,omitempty"`
+	CaseName    string         `json:"caseName,omitempty"`
 	Test        string         `json:"test,omitempty"`
 	Case        string         `json:"case,omitempty"`
+	ServiceIP   string         `json:"serviceIP,omitempty"`
 	ID          string         `json:"id"`
 	JobUID      string         `json:"jobUID"`
 	Phase       string         `json:"phase"`
@@ -48,7 +60,7 @@ type Run struct {
 	Destination Endpoint       `json:"destination"`
 	Started     time.Time      `json:"started"`
 	Finished    *time.Time     `json:"finished,omitempty"`
-	Nodes       []NodeEvidence `json:"nodes"`
+	Nodes       []NodeEvidence `json:"nodes,omitempty"`
 	Traffic     *Traffic       `json:"traffic,omitempty"`
 	Drop        string         `json:"drop,omitempty"`
 }
@@ -99,17 +111,30 @@ func severity(p model.OffloadPath) int {
 	}
 }
 
-func (r *Run) observe(v model.View, report model.OffloadReport, pods []core.Pod) {
+func (r *Run) observe(v model.View, report model.OffloadReport, inv model.Inventory) {
 	// TFT connects to status.podIP. A dual-stack pod can have two attachments
 	// in the inventory; only the one on the test socket can identify this run.
 	primary := map[string]string{}
-	for _, pod := range pods {
+	for _, pod := range inv.Pods {
 		if pod.Namespace != namespace || pod.Labels[runLabel] != r.ID {
 			continue
 		}
 		for _, owner := range pod.OwnerReferences {
 			if owner.Kind == "Job" && owner.Name == jobName && string(owner.UID) == r.JobUID {
 				primary[string(pod.UID)] = pod.Status.PodIP
+			}
+		}
+	}
+	scenario, _ := lookupCase(r.Case)
+	if scenario.Service && r.ServiceIP == "" {
+		for _, svc := range inv.Services {
+			if svc.Namespace != namespace || svc.Labels[runLabel] != r.ID {
+				continue
+			}
+			for _, owner := range svc.OwnerReferences {
+				if owner.Kind == "Job" && owner.Name == jobName && string(owner.UID) == r.JobUID {
+					r.ServiceIP = svc.Spec.ClusterIP
+				}
 			}
 		}
 	}
@@ -132,6 +157,8 @@ func (r *Run) observe(v model.View, report model.OffloadReport, pods []core.Pod)
 	}
 	for i := range r.Nodes {
 		n := &r.Nodes[i]
+		r.recordTestFlows(n, v.TestPaths)
+		n.Limited = n.Limited || v.TestPathsLimited[n.Node]
 		before := n.At
 		for _, node := range report.Nodes {
 			if node.Name == n.Node && node.CapturedAt.After(n.At) && !node.CapturedAt.Before(r.Started) {
@@ -151,7 +178,14 @@ func (r *Run) observe(v model.View, report model.OffloadReport, pods []core.Pod)
 				continue
 			}
 			p.Stages = append([]model.OffloadStage(nil), p.Stages...)
+			direction := "client → server"
+			if p.Tuple.SourceIP == r.Destination.IP {
+				direction = "server → client"
+			}
 			for i := range p.Stages {
+				if p.Stages[i].Raw != "" {
+					n.keepFlow(p.Stages[i], direction, true, p.ObservedAt)
+				}
 				p.Stages[i].Raw = ""
 			}
 			p.Conntrack = append([]model.OffloadCT(nil), p.Conntrack...)
