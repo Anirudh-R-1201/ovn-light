@@ -34,31 +34,39 @@ type Request struct {
 	SourceNode      string `json:"sourceNode"`
 	DestinationNode string `json:"destinationNode"`
 	Network         string `json:"network"`
+	Test            string `json:"test"`
+	Case            string `json:"case"`
 }
 type Status struct {
 	Enabled bool `json:"enabled"`
 	Run     *Run `json:"run,omitempty"`
 }
 type Manager struct {
-	client              kubernetes.Interface
-	image, device, file string
-	wake                chan struct{}
-	operation           sync.Mutex
-	mu                  sync.Mutex
-	run                 *Run
+	client                    kubernetes.Interface
+	image, device, rdma, file string
+	wake                      chan struct{}
+	operation                 sync.Mutex
+	mu                        sync.Mutex
+	run                       *Run
 }
 
-func New(client kubernetes.Interface, image, device, dir string) (*Manager, error) {
-	if device != "" && (len(validation.IsQualifiedName(device)) > 0 || !strings.Contains(device, "/") || strings.HasPrefix(device, "kubernetes.io/")) {
-		return nil, fmt.Errorf("invalid traffic test device resource")
+func New(client kubernetes.Interface, image, device, rdma, dir string) (*Manager, error) {
+	for _, device := range []string{device, rdma} {
+		if device != "" && (len(validation.IsQualifiedName(device)) > 0 || !strings.Contains(device, "/") || strings.HasPrefix(device, "kubernetes.io/")) {
+			return nil, fmt.Errorf("invalid traffic test device resource")
+		}
 	}
-	m := &Manager{wake: make(chan struct{}, 1), client: client, image: image, device: device, file: filepath.Join(dir, "traffic-test.json")}
+	m := &Manager{rdma: rdma, wake: make(chan struct{}, 1), client: client, image: image, device: device, file: filepath.Join(dir, "traffic-test.json")}
 	raw, err := os.ReadFile(m.file)
 	if err == nil {
 		err = json.Unmarshal(raw, &m.run)
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
+	}
+	if m.run != nil && m.run.Test == "" && m.run.Case == "" {
+		// Earlier releases stored only the cross-node TCP profile.
+		m.run.Test, m.run.Case = defaultTest, crossPod
 	}
 	return m, nil
 }
@@ -97,12 +105,17 @@ func (m *Manager) Observe(v model.View, r model.OffloadReport, pods []core.Pod) 
 }
 
 func jobSpec(image, device, id string, q Request) *batch.Job {
+	profile, _ := lookupProfile(q.Test)
+	testCase, _ := lookupCase(q.Case)
 	labels := map[string]string{runLabel: id, "app.kubernetes.io/managed-by": "ovn-light"}
 	runner := core.Container{
 		Name: "runner", Image: image, ImagePullPolicy: core.PullIfNotPresent,
 		Env: []core.EnvVar{
 			{Name: "RUN_ID", Value: id},
 			{Name: "TEST_IMAGE", Value: image},
+			{Name: "TEST_TYPE", Value: profile.ID},
+			{Name: "TEST_CASE", Value: testCase.ID},
+			{Name: "TEST_SECONDS", Value: fmt.Sprint(profile.Seconds)},
 			{Name: "SOURCE_NODE", Value: q.SourceNode},
 			{Name: "DESTINATION_NODE", Value: q.DestinationNode},
 			{Name: "DEVICE_RESOURCE", Value: device},
@@ -122,6 +135,7 @@ func jobSpec(image, device, id string, q Request) *batch.Job {
 	}
 	return &batch.Job{
 		ObjectMeta: meta.ObjectMeta{Name: jobName, Labels: labels, Annotations: map[string]string{
+			"ovn-light.io/test": profile.ID, "ovn-light.io/case": testCase.ID,
 			"ovn-light.io/source": q.SourceNode, "ovn-light.io/destination": q.DestinationNode,
 		}},
 		Spec: batch.JobSpec{
@@ -143,21 +157,49 @@ func jobSpec(image, device, id string, q Request) *batch.Job {
 
 func runFromJob(j *batch.Job) *Run {
 	src, dst := j.Annotations["ovn-light.io/source"], j.Annotations["ovn-light.io/destination"]
-	return &Run{ID: j.Labels[runLabel], JobUID: string(j.UID), Network: "default", Phase: "running", Source: Endpoint{Node: src}, Destination: Endpoint{Node: dst}, Started: j.CreationTimestamp.Time, Nodes: []NodeEvidence{{Node: src, State: "unknown"}, {Node: dst, State: "unknown"}}}
+	nodes := []NodeEvidence{{Node: src, State: "unknown"}}
+	if src != dst {
+		nodes = append(nodes, NodeEvidence{Node: dst, State: "unknown"})
+	}
+	profile, _ := lookupProfile(j.Annotations["ovn-light.io/test"])
+	testCase, _ := lookupCase(j.Annotations["ovn-light.io/case"])
+	return &Run{Test: profile.ID, Case: testCase.ID, ID: j.Labels[runLabel], JobUID: string(j.UID), Network: "default", Phase: "running", Source: Endpoint{Node: src}, Destination: Endpoint{Node: dst}, Started: j.CreationTimestamp.Time, Nodes: nodes}
 }
 func (m *Manager) Start(ctx context.Context, q Request) (Status, error) {
 	if m == nil {
 		return Status{}, fmt.Errorf("traffic tests are disabled")
 	}
-	if q.Network != "default" || q.SourceNode == q.DestinationNode {
-		return Status{}, fmt.Errorf("choose two distinct nodes on the default network")
+	profile, ok := lookupProfile(q.Test)
+	if !ok {
+		return Status{}, fmt.Errorf("unknown suite test %q", q.Test)
+	}
+	testCase, ok := lookupCase(q.Case)
+	if !ok || testCase.Service && !profile.Service {
+		return Status{}, fmt.Errorf("unsupported test case for %s", profile.Name)
+	}
+	if q.Network != "default" {
+		return Status{}, fmt.Errorf("choose the default network")
+	}
+	if (q.SourceNode == q.DestinationNode) != testCase.SameNode {
+		return Status{}, fmt.Errorf("node selection must match the test case %s", testCase.ID)
+	}
+	dev := m.device
+	if profile.RDMA {
+		dev = m.rdma
+		if dev == "" {
+			return Status{}, fmt.Errorf("configure the RDMA device resource to enable this test")
+		}
 	}
 	m.operation.Lock()
 	defer m.operation.Unlock()
 	if s := m.Status(); s.Run != nil && s.Run.Finished == nil {
 		return s, fmt.Errorf("a traffic test is already running")
 	}
-	for _, name := range []string{q.SourceNode, q.DestinationNode} {
+	nodeNames := []string{q.SourceNode}
+	if !testCase.SameNode {
+		nodeNames = append(nodeNames, q.DestinationNode)
+	}
+	for _, name := range nodeNames {
 		if len(validation.IsDNS1123Subdomain(name)) != 0 {
 			return Status{}, fmt.Errorf("invalid node name")
 		}
@@ -165,18 +207,41 @@ func (m *Manager) Start(ctx context.Context, q Request) (Status, error) {
 		if err != nil {
 			return Status{}, err
 		}
-		ready := false
-		for _, c := range n.Status.Conditions {
-			if c.Type == core.NodeReady && c.Status == core.ConditionTrue {
-				ready = true
+		if !readyNode(n) {
+			return Status{}, fmt.Errorf("%s must be a schedulable Ready Linux node", name)
+		}
+		if dev != "" {
+			needed := int64(1)
+			if testCase.SameNode {
+				needed = 2
+			}
+			qty := n.Status.Allocatable[core.ResourceName(dev)]
+			if qty.Value() < needed {
+				return Status{}, fmt.Errorf("%s needs %d allocatable %s devices", name, needed, dev)
 			}
 		}
-		if !ready || n.Labels["kubernetes.io/os"] != "linux" || n.Spec.Unschedulable {
-			return Status{}, fmt.Errorf("%s must be a schedulable Ready Linux node", name)
+	}
+	// TFT reuses its pod and Service names. Job deletion can finish while an
+	// endpoint still terminates, so keep a new run from attaching to it.
+	selector := meta.ListOptions{LabelSelector: runLabel, Limit: 1}
+	pods, err := m.client.CoreV1().Pods(namespace).List(ctx, selector)
+	if err != nil {
+		return Status{}, err
+	}
+	if len(pods.Items) > 0 {
+		return m.Status(), fmt.Errorf("previous test pods are being cleaned up; try again shortly")
+	}
+	if testCase.Service {
+		services, err := m.client.CoreV1().Services(namespace).List(ctx, selector)
+		if err != nil {
+			return Status{}, err
+		}
+		if len(services.Items) > 0 {
+			return m.Status(), fmt.Errorf("previous test Service is being cleaned up; try again shortly")
 		}
 	}
 	id := strings.ToLower(rand.Text())
-	j, err := m.client.BatchV1().Jobs(namespace).Create(ctx, jobSpec(m.image, m.device, id, q), meta.CreateOptions{})
+	j, err := m.client.BatchV1().Jobs(namespace).Create(ctx, jobSpec(m.image, dev, id, q), meta.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) {
 		return m.Status(), fmt.Errorf("a test is running or its pods are being cleaned up")
 	}
@@ -277,7 +342,13 @@ func (m *Manager) reconcile(ctx context.Context) error {
 					if json.Unmarshal([]byte(t.Message), &rec) == nil {
 						result = rec
 					}
-					if !complete || t.ExitCode != 0 || result.Bytes <= 0 {
+					profile, _ := lookupProfile(m.run.Test)
+					legacy := result.Test == "" && result.Case == "" && profile.ID == defaultTest && m.run.Case == crossPod
+					if !legacy && (result.Test != m.run.Test || result.Case != m.run.Case) && result.Delivered {
+						result.Delivered = false
+						result.Error = "The runner returned a different test or case. Update the runner image."
+					}
+					if !complete || t.ExitCode != 0 || (profile.ID == defaultTest || profile.ID == "iperf-udp") && result.Bytes <= 0 {
 						result.Delivered = false
 					}
 				}

@@ -2,6 +2,7 @@
 package flowtest
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,14 +24,22 @@ type NodeEvidence struct {
 	Limited bool                `json:"limited,omitempty"`
 }
 type Traffic struct {
-	Delivered     bool    `json:"delivered"`
-	Bytes         int64   `json:"bytes,omitempty"`
-	BPS           float64 `json:"bps,omitempty"`
-	SourceIP      string  `json:"sourceIP,omitempty"`
-	DestinationIP string  `json:"destinationIP,omitempty"`
-	Error         string  `json:"error,omitempty"`
+	Test          string   `json:"test,omitempty"`
+	Case          string   `json:"case,omitempty"`
+	TargetIP      string   `json:"targetIP,omitempty"`
+	Transactions  float64  `json:"transactionsPerSecond,omitempty"`
+	Loss          *float64 `json:"lostPercent,omitempty"`
+	Jitter        *float64 `json:"jitterMs,omitempty"`
+	Delivered     bool     `json:"delivered"`
+	Bytes         int64    `json:"bytes,omitempty"`
+	BPS           float64  `json:"bps,omitempty"`
+	SourceIP      string   `json:"sourceIP,omitempty"`
+	DestinationIP string   `json:"destinationIP,omitempty"`
+	Error         string   `json:"error,omitempty"`
 }
 type Run struct {
+	Test        string         `json:"test,omitempty"`
+	Case        string         `json:"case,omitempty"`
 	ID          string         `json:"id"`
 	JobUID      string         `json:"jobUID"`
 	Phase       string         `json:"phase"`
@@ -44,15 +53,31 @@ type Run struct {
 	Drop        string         `json:"drop,omitempty"`
 }
 
+func (p Profile) ports() (client, server string) {
+	switch p.ID {
+	case defaultTest, "iperf-udp":
+		return "35201", "5201"
+	case "netperf-tcp-rr", "netperf-tcp-stream":
+		return "35202", "5202"
+	default:
+		return "", "5201"
+	}
+}
+
 func (r *Run) matches(p model.OffloadPath) bool {
+	profile, _ := lookupProfile(r.Test)
 	t := p.Tuple
-	if r.Source.UID == "" || r.Destination.UID == "" || t == nil || t.Protocol != "tcp" || p.Network != r.Network || p.ObservedAt.Before(r.Started) {
+	if r.Source.UID == "" || r.Destination.UID == "" || t == nil || profile.Protocol == "" || t.Protocol != profile.Protocol || p.Network != r.Network || p.ObservedAt.Before(r.Started) {
 		return false
 	}
 	src, dst := r.Source, r.Destination
-	if t.SourcePort == "5201" && t.DestinationPort == "35201" {
+	clientPort, serverPort := t.SourcePort, t.DestinationPort
+	wantClient, wantServer := profile.ports()
+	if t.SourcePort == wantServer {
 		src, dst = dst, src
-	} else if t.SourcePort != "35201" || t.DestinationPort != "5201" {
+		clientPort, serverPort = t.DestinationPort, t.SourcePort
+	}
+	if serverPort != wantServer || wantClient != "" && clientPort != wantClient {
 		return false
 	}
 	return src.IP == t.SourceIP && dst.IP == t.DestinationIP && (p.Source.UID == "" || p.Source.UID == src.UID) && (p.Destination.UID == "" || p.Destination.UID == dst.UID)
@@ -170,8 +195,10 @@ func (r *Run) observe(v model.View, report model.OffloadReport, pods []core.Pod)
 			}
 		}
 	}
+	profile, _ := lookupProfile(r.Test)
+	_, serverPort := profile.ports()
 	for _, f := range v.Findings {
-		if r.Source.UID != "" && r.Destination.UID != "" && f.Source.UID == r.Source.UID && f.Destination.UID == r.Destination.UID && f.Source.Network == r.Network && f.Destination.Port == 5201 && strings.EqualFold(f.Protocol, "TCP") && f.Delta != nil && *f.Delta > 0 && !f.SharedCounter && f.ObservedAt.After(r.Started) {
+		if r.Source.UID != "" && r.Destination.UID != "" && f.Source.UID == r.Source.UID && f.Destination.UID == r.Destination.UID && f.Source.Network == r.Network && strconv.Itoa(f.Destination.Port) == serverPort && profile.Protocol != "" && strings.EqualFold(f.Protocol, profile.Protocol) && f.Delta != nil && *f.Delta > 0 && !f.SharedCounter && f.ObservedAt.After(r.Started) {
 			for _, c := range f.Causes {
 				if c.ACL != "" {
 					r.Drop = strings.TrimSpace(strings.Join([]string{c.Type, c.Namespace, c.Name, c.Direction, c.Action, c.ACL}, " "))

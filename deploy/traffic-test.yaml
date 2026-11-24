@@ -17,6 +17,9 @@ rules:
   resources: [pods]
   verbs: [create, get, list, watch]
 - apiGroups: [""]
+  resources: [services]
+  verbs: [create, get]
+- apiGroups: [""]
   resources: [pods/exec]
   verbs: [create, get]
 ---
@@ -61,4 +64,4 @@ apiVersion: v1
 kind: ConfigMap
 metadata: {name: ovn-light-traffic-test, namespace: ovn-light}
 data:
-  OVN_LIGHT_TRAFFIC_TEST_IMAGE: ovn-light-tft:9f911a1-v1
+  OVN_LIGHT_TRAFFIC_TEST_IMAGE: ovn-light-tft:9f911a1-v2

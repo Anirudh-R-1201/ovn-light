@@ -137,7 +137,7 @@ for each node. The central server keeps up to 2,000 traffic groups and 60 rounds
 over ten minutes. Standalone `capture` still supports a full raw diagnostic snapshot.
 See [collection and scaling](docs/architecture.md#topology-and-scaling).
 
-The **Run traffic test** button on Hardware Offload and topology links runs a rate-limited cross-node probe when the optional TFT runner is installed. See [traffic tests](docs/traffic-tests.md).
+The **Run traffic test** button on Hardware Offload and topology links lets you choose a suite test, pod or ClusterIP path, and endpoint nodes when the optional TFT runner is installed. See [traffic tests](docs/traffic-tests.md).
 
 ## Traffic history with Loki
 

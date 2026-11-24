@@ -14,6 +14,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   await page.getByRole('button',{name:'kind-worker to kind-worker2: Both ends observed',exact:true}).click();
   await page.waitForSelector('#topology-connection-detail .topology-measures');
   if(!await page.locator('#topology-connection-detail').textContent().then(s=>s.includes('Source observation')&&s.includes('Receiver observation')&&s.includes('500 measured packets')))throw new Error('Topology lost independent source/receiver rates');
+  await require('./browser-traffic-tests.cjs')(page);
   await page.locator('#topology-level').selectOption('pods');
   await page.waitForFunction(()=>document.querySelector('#topology-location').textContent.endsWith('/ Pods'));
   if(!await page.locator('#topology-graph').textContent().then(s=>s.includes('catalog-9dd4')))throw new Error('Pod drill-down lost destination');

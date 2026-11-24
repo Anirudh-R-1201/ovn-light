@@ -3,11 +3,14 @@ package flowtest
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
@@ -22,16 +25,16 @@ func TestStartCrossNode(t *testing.T) {
 		}
 	}
 	client := fake.NewClientset(node("a"), node("b"))
-	manager, err := New(client, "test-runner", "", t.TempDir())
+	manager, err := New(client, "test-runner", "", "", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []Request{{"a", "a", "default"}, {"a", "b", "blue"}, {"a", "unknown", "default"}} {
+	for _, bad := range []Request{{"a", "a", "default", "", ""}, {"a", "b", "blue", "", ""}, {"a", "unknown", "default", "", ""}} {
 		if _, err := manager.Start(ctx, bad); err == nil {
 			t.Fatalf("accepted %+v", bad)
 		}
 	}
-	req := Request{"a", "b", "default"}
+	req := Request{SourceNode: "a", DestinationNode: "b", Network: "default"}
 	status, err := manager.Start(ctx, req)
 	if err != nil || status.Run == nil || status.Run.Source.Node != "a" || status.Run.Destination.Node != "b" {
 		t.Fatalf("start returned %+v, %v", status, err)
@@ -49,7 +52,7 @@ func TestRecoverJobAndPersistResult(t *testing.T) {
 	for _, state := range []batch.JobConditionType{batch.JobComplete, batch.JobFailed} {
 		t.Run(string(state), func(t *testing.T) {
 			ctx := context.Background()
-			job := jobSpec("image", "", "test-run", Request{"a", "b", "default"})
+			job := jobSpec("image", "", "test-run", Request{SourceNode: "a", DestinationNode: "b", Network: "default"})
 			job.UID, job.Namespace, job.CreationTimestamp = "job-uid", namespace, meta.Now()
 			job.Status.Conditions = []batch.JobCondition{{Type: state, Status: core.ConditionTrue}}
 			runner := &core.Pod{
@@ -63,7 +66,7 @@ func TestRecoverJobAndPersistResult(t *testing.T) {
 			}
 			store := t.TempDir()
 			client := fake.NewClientset(job, runner)
-			manager, err := New(client, "image", "", store)
+			manager, err := New(client, "image", "", "", store)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -74,7 +77,7 @@ func TestRecoverJobAndPersistResult(t *testing.T) {
 			if !apierrors.IsNotFound(err) {
 				t.Fatalf("completed Job cleanup: %v", err)
 			}
-			restarted, err := New(client, "image", "", store)
+			restarted, err := New(client, "image", "", "", store)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -83,5 +86,84 @@ func TestRecoverJobAndPersistResult(t *testing.T) {
 				t.Fatalf("persisted result: %+v", result)
 			}
 		})
+	}
+}
+
+func TestCatalogPlacementAndDeviceAvailability(t *testing.T) {
+	node := func(name string, ready bool, devices string) *core.Node {
+		n := &core.Node{ObjectMeta: meta.ObjectMeta{Name: name, Labels: map[string]string{core.LabelOSStable: "linux"}}}
+		if ready {
+			n.Status.Conditions = []core.NodeCondition{{Type: core.NodeReady, Status: core.ConditionTrue}}
+		}
+		n.Status.Allocatable = core.ResourceList{"test.example/rdma": resource.MustParse(devices)}
+		return n
+	}
+	readyNodes := func() *fake.Clientset {
+		return fake.NewClientset(node("worker-b", true, "1"), node("worker-a", true, "2"), node("offline", false, "0"))
+	}
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name, test, scenario, src, dst, rdma string
+		ok                                   bool
+	}{
+		{"same node service", "http", localService, "worker-b", "worker-b", "", true},
+		{"different nodes selected", "iperf-udp", crossService, "worker-b", "worker-a", "", true},
+		{"same node case mismatch", "http", localService, "worker-b", "worker-a", "", false},
+		{"different node case mismatch", "simple", crossPod, "worker-b", "worker-b", "", false},
+		{"unimplemented case", "http", "POD_TO_EXTERNAL", "worker-b", "worker-a", "", false},
+		{"netperf service data port", "netperf-tcp-rr", crossService, "worker-b", "worker-a", "", true},
+		{"unrecognized type", "invalid", localPod, "worker-b", "worker-b", "", false},
+		{"RDMA unavailable", "ib-read-bw", crossPod, "worker-b", "worker-a", "", false},
+		{"RDMA pair", "ib-read-bw", crossPod, "worker-b", "worker-a", "test.example/rdma", true},
+		{"RDMA local devices exhausted", "ib-write-bw", localPod, "worker-b", "worker-b", "test.example/rdma", false},
+		{"RDMA local pair", "ib-send-bw", localPod, "worker-a", "worker-a", "test.example/rdma", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := readyNodes()
+			m, err := New(client, "runner", "", tt.rdma, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts, err := m.Options(ctx)
+			if err != nil || len(opts.Nodes) != 2 || opts.Nodes[0].Name != "worker-a" || len(opts.Profiles) != 9 || len(opts.Cases) != 4 {
+				t.Fatalf("catalog %+v, %v", opts, err)
+			}
+			out, err := m.Start(ctx, Request{Test: tt.test, Case: tt.scenario, SourceNode: tt.src, DestinationNode: tt.dst, Network: "default"})
+			if (err == nil) != tt.ok {
+				t.Fatalf("start: %v", err)
+			}
+			if !tt.ok {
+				return
+			}
+			j, err := client.BatchV1().Jobs(namespace).Get(ctx, jobName, meta.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := map[string]string{}
+			for _, v := range j.Spec.Template.Spec.Containers[0].Env {
+				env[v.Name] = v.Value
+			}
+			if env["TEST_TYPE"] != tt.test || env["TEST_CASE"] != tt.scenario || env["SOURCE_NODE"] != tt.src || env["DESTINATION_NODE"] != tt.dst || env["DEVICE_RESOURCE"] != tt.rdma || out.Run.Test != tt.test || out.Run.Case != tt.scenario {
+				t.Fatal(out.Run, env)
+			}
+			if (len(out.Run.Nodes) == 1) != (tt.src == tt.dst) {
+				t.Fatal(out.Run.Nodes)
+			}
+		})
+	}
+}
+
+func TestRestoreLegacyRun(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "traffic-test.json"), []byte(`{"id":"old","jobUID":"job-1","source":{"node":"one"},"destination":{"node":"two"},"phase":"running"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := New(fake.NewClientset(), "runner", "", "", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := m.Status().Run
+	if r.Test != defaultTest || r.Case != crossPod || r.ID != "old" {
+		t.Fatal(r)
 	}
 }

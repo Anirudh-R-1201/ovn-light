@@ -59,6 +59,10 @@ func Handler(a *app.App, token string) http.Handler {
 		result, err := a.TraceCheck(r.Context(), "dns", trace.Request{}, request)
 		respond(w, result, err)
 	})
+	mux.HandleFunc("GET /api/traffic-test/options", func(w http.ResponseWriter, r *http.Request) {
+		options, err := a.TrafficTest.Options(r.Context())
+		respond(w, options, err)
+	})
 	mux.HandleFunc("GET /api/traffic-test", func(w http.ResponseWriter, r *http.Request) { respond(w, a.TrafficTest.Status(), nil) })
 	mux.HandleFunc("POST /api/traffic-test", func(w http.ResponseWriter, r *http.Request) {
 		var request flowtest.Request

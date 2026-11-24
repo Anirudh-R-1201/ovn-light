@@ -118,3 +118,38 @@ func TestAgentSummaryIdentifiesSoftwareRecirculation(t *testing.T) {
 		t.Fatal(p.Conntrack)
 	}
 }
+
+func TestSelectedProfileMatchesOnlyItsDataTraffic(t *testing.T) {
+	src, dst := Endpoint{UID: "client", IP: "10.0.0.1"}, Endpoint{UID: "server", IP: "10.0.1.1"}
+	run := Run{Source: src, Destination: dst, Network: "default"}
+	for _, tt := range []struct {
+		test, protocol, port string
+		matches              bool
+	}{
+		{"iperf-udp", "udp", "35201", true}, {"iperf-udp", "tcp", "35201", false}, {"iperf-udp", "udp", "40312", false},
+		{"http", "tcp", "40312", true}, {"simple", "tcp", "40312", true}, {"netperf-tcp-stream", "tcp", "40312", false}, {"ib-read-bw", "tcp", "35201", false},
+	} {
+		run.Test = tt.test
+		for _, tuple := range []model.FlowTuple{
+			{SourceIP: src.IP, DestinationIP: dst.IP, Protocol: tt.protocol, SourcePort: tt.port, DestinationPort: "5201"},
+			{SourceIP: dst.IP, DestinationIP: src.IP, Protocol: tt.protocol, SourcePort: "5201", DestinationPort: tt.port},
+		} {
+			if run.matches(model.OffloadPath{Tuple: &tuple, Network: "default"}) != tt.matches {
+				t.Fatalf("profile %s tuple %+v", tt.test, tuple)
+			}
+		}
+	}
+}
+
+func TestNetperfSeparatesControlFromData(t *testing.T) {
+	run := Run{Test: "netperf-tcp-rr", Source: Endpoint{UID: "a", IP: "10.0.0.1"}, Destination: Endpoint{UID: "b", IP: "10.0.0.2"}, Network: "default"}
+	data := model.FlowTuple{Protocol: "tcp", SourceIP: run.Source.IP, DestinationIP: run.Destination.IP, SourcePort: "35202", DestinationPort: "5202"}
+	path := model.OffloadPath{Network: run.Network, Tuple: &data}
+	if !run.matches(path) {
+		t.Fatal("missing negotiated data stream")
+	}
+	data.DestinationPort = "5201"
+	if run.matches(path) {
+		t.Fatal("control connection classified as data")
+	}
+}

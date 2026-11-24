@@ -85,10 +85,13 @@
 <dialog id="login"><form id="login-form"><span class="oven">◉</span><h2>Open the oven.</h2><p class="muted">Enter your OVN-Light access token. It stays in this tab’s session storage.</p><label>Access token<input id="token" type="password" autocomplete="current-password" required></label><p id="login-error" class="error"></p><button class="button primary" type="submit">Connect</button></form></dialog>
 <dialog id="detail"><div class="dialog-header"><p class="eyebrow">DROP EVIDENCE</p><button class="icon close" aria-label="Close">×</button></div><div id="detail-body"></div></dialog>
 <dialog id="traffic-test-dialog" aria-labelledby="traffic-test-title">
-<div class="dialog-header"><h2 id="traffic-test-title">Cross-node TCP test</h2><button class="icon close" aria-label="Close">×</button></div>
-<p>Send one TCP stream between two temporary test pods on the default network. The sender targets 1 Mbit/s for 120 seconds.</p>
-<form id="traffic-test-form"><div class="traffic-test-nodes"><label>Source node<select required id="traffic-test-source"></select></label><label>Destination node<select required id="traffic-test-destination"></select></label></div>
-<p id="traffic-test-message" class="note" role="status"></p><button id="traffic-test-submit" class="button primary" type="submit" disabled>Start TCP test</button></form>
+<div class="dialog-header"><h2 id="traffic-test-title">Run traffic flow test</h2><button class="icon close" aria-label="Close">×</button></div>
+<p>Run one upstream test between temporary pods on the default network.</p>
+<form id="traffic-test-form"><div class="traffic-test-nodes">
+<label>Test type<select required id="traffic-test-profile"></select></label>
+<label>Test case<select required id="traffic-test-case"></select></label></div>
+<p id="traffic-test-description" class="note"></p><div class="traffic-test-nodes"><label>Source node<select required id="traffic-test-source"></select></label><label>Destination node<select required id="traffic-test-destination"></select></label></div>
+<p id="traffic-test-message" class="note" role="status"></p><button id="traffic-test-submit" class="button primary" type="submit" disabled>Start test</button></form>
 <div id="traffic-test-result"></div></dialog>
 <dialog id="offload-detail"><div class="dialog-header"><p class="eyebrow">OFFLOAD EVIDENCE</p><button class="icon close" aria-label="Close">×</button></div><div id="offload-detail-body"></div></dialog>
 <dialog id="intent">

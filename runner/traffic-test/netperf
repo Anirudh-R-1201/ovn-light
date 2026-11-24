@@ -1,0 +1,11 @@
+#!/bin/sh
+# Pin the data socket separately from TFT's control port. A peer that stops
+# acknowledging data can otherwise leave netperf draining past the test window.
+timeout -k 2s 30s /usr/bin/netperf "$@" -- -P 35202,5202 >/tmp/netperf.out 2>/tmp/netperf.err
+status=$?
+cat /tmp/netperf.out
+cat /tmp/netperf.err >&2
+if [ "$status" -eq 124 ]; then
+    echo 'Netperf timed out waiting for the peer after 30 seconds.' >>/tmp/netperf.err
+fi
+exit "$status"

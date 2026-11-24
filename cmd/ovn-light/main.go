@@ -181,7 +181,7 @@ func run() error {
 		return err
 	}
 	if image := os.Getenv("OVN_LIGHT_TRAFFIC_TEST_IMAGE"); image != "" && a.Writes {
-		a.TrafficTest, err = flowtest.New(client.Core, image, os.Getenv("OVN_LIGHT_TRAFFIC_TEST_DEVICE_RESOURCE"), *dataDir)
+		a.TrafficTest, err = flowtest.New(client.Core, image, os.Getenv("OVN_LIGHT_TRAFFIC_TEST_DEVICE_RESOURCE"), os.Getenv("OVN_LIGHT_TRAFFIC_TEST_RDMA_RESOURCE"), *dataDir)
 		if err != nil {
 			return err
 		}

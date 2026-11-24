@@ -8,6 +8,11 @@ RUN curl -fsSL --retry 3 https://codeload.github.com/ovn-kubernetes/kubernetes-t
     tar -xzf /tmp/tft.tgz --strip-components=1 && rm /tmp/tft.tgz && pip install --no-cache-dir -r requirements.txt
 COPY --from=cli /bin/kubectl /usr/local/bin/kubectl
 RUN ln -s /usr/local/bin/kubectl /usr/local/bin/oc
+RUN sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends netperf perftest && rm -rf /var/lib/apt/lists/* && \
+    install -m 0755 scripts/simple-tcp-server-client.py /usr/local/bin/simple-tcp-server-client && \
+    mkdir -p /etc/kubernetes-traffic-flow-tests && printf 'kubernetes-traffic-flow-tests\n' > /etc/kubernetes-traffic-flow-tests/data
+COPY --chmod=0755 netperf /usr/local/bin/netperf
 COPY run.py .
 USER 10001:10001
 ENTRYPOINT ["python", "/opt/tft/run.py"]
