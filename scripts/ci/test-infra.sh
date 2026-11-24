@@ -79,5 +79,15 @@ if [[ "$lane" == history ]]; then
   extra+=(--loki-url "$forward_url")
 fi
 forward_service ovn-light 8080 healthz
+if [[ "$lane" == traffic-tests ]]; then
+  args=(--token-file "$work_dir/token" --context "$context" --artifacts "$artifacts")
+  python3 scripts/e2e-traffic-tests.py run --url "$forward_url" "${args[@]}"
+  kubectl --context "$context" -n ovn-light rollout restart deployment/ovn-light
+  kubectl --context "$context" -n ovn-light rollout status deployment/ovn-light --timeout=180s
+  # A port-forward ends when its selected server pod exits.
+  forward_service ovn-light 8080 healthz
+  python3 scripts/e2e-traffic-tests.py verify --url "$forward_url" "${args[@]}"
+  exit 0
+fi
 python3 scripts/e2e-infra.py --lane "$lane" --url "$forward_url" --token-file "$work_dir/token" \
   --context "$context" --artifacts "$artifacts" "${extra[@]}"

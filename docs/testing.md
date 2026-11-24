@@ -114,6 +114,7 @@ All jobs use ephemeral clusters and need no repository secrets.
 | `topology` | Cross-node denial → reviewed allowance → node-level source/receiver rates and resolved receiver pod identities → network filtering and counter deduplication → rollback restores denial |
 | `egress` | Attributed external deny and rule index → dry-run leaves firewall unchanged → insert a host-IP TCP allowance before the deny → real external TCP and API Verify succeed → rollback restores denial and preserves firewall UID/rule order |
 | `history` | Real denied TCP connection → DaemonSet collection → live Loki archive → previous-day lookup of the same pod UIDs, AdminNetworkPolicy, ingress rule and denying ACL after policy deletion |
+| `traffic-tests` | Cross-node iperf TCP at 1 Mbit/s passes a 0.5 Mbit/s minimum and fails a 2 Mbit/s minimum. Both transfers must deliver data. After the runner pods are cleaned up and the dashboard restarts, both saved runs must contain their evaluator verdicts and raw OVS flow evidence from each selected node. The lane uploads each run as JSON. |
 
 The history lane enables AdminNetworkPolicy and deploys the single-pod Loki from
 `deploy/loki-kind.yaml`. It replays an actual exported record at noon yesterday

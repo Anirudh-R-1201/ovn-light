@@ -5,7 +5,7 @@ cluster="${1:?Usage: test-lane.sh cluster-name lane artifact-directory}"
 lane="${2:?Missing lane}"
 artifacts="${3:?Missing artifact directory}"
 case "$lane" in
-  admin|egressip|routing|history) exec scripts/ci/test-infra.sh "$cluster" "$lane" "$artifacts" ;;
+  admin|egressip|routing|history|traffic-tests) exec scripts/ci/test-infra.sh "$cluster" "$lane" "$artifacts" ;;
 esac
 context="kind-$cluster"
 mkdir -p "$artifacts"

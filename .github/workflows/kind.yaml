@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [cdn, udn, secondary, egress, topology, admin, egressip, routing, qos, history]
+        lane: [cdn, udn, secondary, egress, topology, admin, egressip, routing, qos, history, traffic-tests]
     env:
       LANE: ${{ matrix.lane }}
       KIND_CLUSTER: ovn-light-ci
@@ -52,6 +52,15 @@ jobs:
         kubectl --context "kind-$KIND_CLUSTER" create namespace ovn-light
         kubectl --context "kind-$KIND_CLUSTER" apply -f deploy/loki-kind.yaml
         kubectl --context "kind-$KIND_CLUSTER" -n ovn-light rollout status deployment/ovn-light-loki --timeout=3m
+    - name: Install the traffic test runner
+      if: matrix.lane == 'traffic-tests'
+      run: |
+        context="kind-$KIND_CLUSTER"
+        kubectl --context "$context" create namespace ovn-light
+        kubectl --context "$context" apply -f deploy/traffic-test.yaml
+        image="$(kubectl --context "$context" -n ovn-light get configmap ovn-light-traffic-test -o jsonpath='{.data.OVN_LIGHT_TRAFFIC_TEST_IMAGE}')"
+        docker build -t "$image" runner/traffic-test
+        kind load docker-image --name "$KIND_CLUSTER" "$image"
     - name: Build and deploy OVN-Light
       run: scripts/deploy-kind.sh "$KIND_CLUSTER"
     - name: Test ${{ matrix.lane }} on KIND
