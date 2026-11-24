@@ -25,11 +25,17 @@ class Harness:
         request = urllib.request.Request(self.args.url + '/api/' + path,
             data=None if data is None else json.dumps(data).encode(),
             headers={'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json'})
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as error:
-            raise RuntimeError(json.load(error).get('error', str(error))) from error
+        deadline = time.monotonic() + 120
+        while True:
+            try:
+                with urllib.request.urlopen(request, timeout=120) as response:
+                    return json.load(response)
+            except urllib.error.HTTPError as error:
+                with error:
+                    message = json.load(error).get('error', str(error))
+                if path != 'refresh' or message != 'collection is already running' or time.monotonic() >= deadline:
+                    raise RuntimeError(message) from error
+                time.sleep(2)
 
     def kubectl(self, *args):
         return subprocess.run(self.command + list(args), capture_output=True, text=True, timeout=45)
@@ -333,7 +339,10 @@ class Harness:
         for node in nodes:
             stats = node['collection']
             assert stats.get('agent') and 0 < stats.get('summaryBytes', 0) <= 1024**2, node['name']
-            assert node['summary']['flows'] > 0 and stats['trafficGroups'] > 0, node['name']
+            summary = node['summary']
+            assert summary['flows'] > 0 and stats.get('flowComplete'), node['name']
+            # An idle node can inspect OVS successfully and report zero workload groups.
+            assert stats.get('trafficGroups', 0) == len(summary.get('traffic', [])), node['name']
             assert not any(node.get(key) for key in ('flows', 'detraces', 'logicalFlows')), node['name']
 
     def artifacts(self):
