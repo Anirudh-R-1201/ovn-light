@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [cdn, udn, secondary, egress, topology, admin, egressip, routing, qos]
+        lane: [cdn, udn, secondary, egress, topology, admin, egressip, routing, qos, history]
     env:
       LANE: ${{ matrix.lane }}
       KIND_CLUSTER: ovn-light-ci
@@ -46,9 +46,15 @@ jobs:
       run: |
         mkdir -p "$ARTIFACTS"
         scripts/ci/create-cluster.sh "$KIND_CLUSTER"
+    - name: Install Loki for the history lane
+      if: matrix.lane == 'history'
+      run: |
+        kubectl --context "kind-$KIND_CLUSTER" create namespace ovn-light
+        kubectl --context "kind-$KIND_CLUSTER" apply -f deploy/loki-kind.yaml
+        kubectl --context "kind-$KIND_CLUSTER" -n ovn-light rollout status deployment/ovn-light-loki --timeout=3m
     - name: Build and deploy OVN-Light
       run: scripts/deploy-kind.sh "$KIND_CLUSTER"
-    - name: Detect, propose, apply, verify and roll back
+    - name: Test ${{ matrix.lane }} on KIND
       env:
         LANE: ${{ matrix.lane }}
       run: scripts/ci/test-lane.sh "$KIND_CLUSTER" "$LANE" "$ARTIFACTS"

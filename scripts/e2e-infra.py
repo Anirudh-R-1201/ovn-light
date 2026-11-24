@@ -5,6 +5,7 @@ import json
 import subprocess
 import time
 from e2e import Harness
+from history_e2e import check_history
 
 
 class Infra(Harness):
@@ -20,12 +21,12 @@ class Infra(Harness):
         assert result.returncode == 0, result.stderr
         return result.stdout
 
-    def setup(self):
+    def setup(self, *, same_node=False):
         nodes = sorted(n['metadata']['name'] for n in self.get('nodes')['items'])
         assert len(nodes) >= 2, 'Requires two nodes'
         self.nodes = nodes
         self.apply({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': self.namespace}})
-        for name, node in [('client', nodes[0]), ('server', nodes[1])]:
+        for name, node in [('client', nodes[0]), ('server', nodes[0] if same_node else nodes[1])]:
             container = {'name': name, 'image': 'registry.k8s.io/e2e-test-images/agnhost:2.45'}
             if name == 'server':
                 container['args'] = ['netexec', '--http-port=8080', '--udp-port=-1']
@@ -82,6 +83,9 @@ class Infra(Harness):
         self.eventually(lambda: self.connection(self.source, self.dest, True))
         self.checked('delete', 'baselineadminnetworkpolicy', 'default')
         print('ANP/BANP: exact denying rule attributed; ANP overrides NP allow; Pass and BANP precedence verified.', flush=True)
+
+    def history(self):
+        check_history(self)
 
     def assign_egress(self):
         for node in self.nodes[:-1]:
@@ -178,11 +182,12 @@ class Infra(Harness):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--lane', required=True, choices=['admin', 'egressip', 'routing'])
+    p.add_argument('--lane', required=True, choices=['admin', 'egressip', 'routing', 'history'])
     p.add_argument('--url', required=True)
     p.add_argument('--context', required=True)
     p.add_argument('--token-file', required=True)
     p.add_argument('--artifacts')
+    p.add_argument('--loki-url')
     p.add_argument('--egress-ip')
     p.add_argument('--external-ip')
     p.add_argument('--peer-ip')

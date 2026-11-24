@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-cluster="${1:?Usage: test-lane.sh cluster-name cdn|udn|secondary|egress|topology artifact-directory}"
+cluster="${1:?Usage: test-lane.sh cluster-name lane artifact-directory}"
 lane="${2:?Missing lane}"
 artifacts="${3:?Missing artifact directory}"
 case "$lane" in
-  admin|egressip|routing) exec scripts/ci/test-infra.sh "$cluster" "$lane" "$artifacts" ;;
+  admin|egressip|routing|history) exec scripts/ci/test-infra.sh "$cluster" "$lane" "$artifacts" ;;
 esac
 context="kind-$cluster"
 mkdir -p "$artifacts"

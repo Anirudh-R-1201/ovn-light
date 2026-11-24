@@ -113,6 +113,16 @@ All jobs use ephemeral clusters and need no repository secrets.
 | `secondary` | Observed secondary drop → inferred MultiNetworkPolicy with exact NAD → API apply opens secondary TCP while primary stays denied → rollback restores secondary denial |
 | `topology` | Cross-node denial → reviewed allowance → node-level source/receiver rates and resolved receiver pod identities → network filtering and counter deduplication → rollback restores denial |
 | `egress` | Attributed external deny and rule index → dry-run leaves firewall unchanged → insert a host-IP TCP allowance before the deny → real external TCP and API Verify succeed → rollback restores denial and preserves firewall UID/rule order |
+| `history` | Real denied TCP connection → DaemonSet collection → live Loki archive → previous-day lookup of the same pod UIDs, AdminNetworkPolicy, ingress rule and denying ACL after policy deletion |
+
+The history lane enables AdminNetworkPolicy and deploys the single-pod Loki from
+`deploy/loki-kind.yaml`. It replays an actual exported record at noon yesterday
+UTC in a separate Loki stream, flushes the test instance, removes the policy and
+verifies that TCP succeeds again. It then queries the deployed, authenticated
+`/api/history` endpoint over yesterday’s midnight-to-midnight range. Time,
+verdict, network and policy filters are checked. The verified record is saved as
+`yesterday-drop.json` in the lane’s artifact. Run this lane on a disposable
+cluster because the historical fixture stays in its archive until retention expires.
 
 Every policy lane also checks that TCP/8081 stays denied, dry-run leaves cluster
 state unchanged, and rollback preserves existing policies. EgressFirewall restores

@@ -43,7 +43,7 @@ kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/
 api_endpoint="https://$cluster-control-plane:6443"
 features=()
 if [[ "${LANE:-}" == qos ]]; then features+=(--set global.enableNetworkQos=true); fi
-if [[ "${LANE:-}" == admin || "${LANE:-}" == routing ]]; then
+if [[ "${LANE:-}" == admin || "${LANE:-}" == routing || "${LANE:-}" == history ]]; then
   for resource in adminnetworkpolicies baselineadminnetworkpolicies; do
     kubectl --context "$context" apply --server-side -f "https://raw.githubusercontent.com/kubernetes-sigs/network-policy-api/$NETWORK_POLICY_API_VERSION/config/crd/standard/policy.networking.k8s.io_$resource.yaml"
   done

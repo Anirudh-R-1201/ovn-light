@@ -8,13 +8,13 @@ artifacts="${3:?Missing artifact directory}"
 context="kind-$cluster"
 mkdir -p "$artifacts"
 work_dir="$(mktemp -d)"
-forward_pid=''
+forward_pids=()
 containers=()
 cleanup() {
   if [[ -n "${egress_ip:-}" ]]; then
     kubectl --context "$context" --request-timeout=15s delete egressip ovn-light-egress --ignore-not-found --wait=true >/dev/null || true
   fi
-  [[ -z "$forward_pid" ]] || kill "$forward_pid" 2>/dev/null || true
+  for pid in "${forward_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
   for container in "${containers[@]}"; do docker rm -f "$container" >/dev/null || true; done
   rm -rf "$work_dir"
 }
@@ -56,15 +56,28 @@ if [[ "$lane" == routing ]]; then
   extra+=(--peer-ip "$peer_ip" --peer-container "$peer")
 fi
 kubectl --context "$context" -n ovn-light get secret ovn-light-auth -o jsonpath='{.data.token}' | base64 -d >"$work_dir/token"
-kubectl --context "$context" -n ovn-light port-forward service/ovn-light :8080 >"$artifacts/port-forward.log" 2>&1 &
-forward_pid=$!
-port=''
-for _attempt in {1..60}; do
-  port="$(sed -n 's/.*127\.0\.0\.1:\([0-9]*\) ->.*/\1/p' "$artifacts/port-forward.log" | head -1)"
-  if [[ -n "$port" ]] && curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null; then break; fi
-  kill -0 "$forward_pid"
-  sleep 1
-done
-[[ -n "$port" ]]
-python3 scripts/e2e-infra.py --lane "$lane" --url "http://127.0.0.1:$port" --token-file "$work_dir/token" \
+# Keep each tunnel tied to this test process. The OS assigns the local ports.
+forward_service() {
+  local service="$1" remote="$2" ready="$3" log="$artifacts/$1-port-forward.log" pid port
+  kubectl --context "$context" -n ovn-light port-forward --address=127.0.0.1 "service/$service" ":$remote" >"$log" 2>&1 &
+  pid=$!
+  forward_pids+=("$pid")
+  for _attempt in {1..60}; do
+    port="$(sed -n 's/.*127\.0\.0\.1:\([0-9]*\) ->.*/\1/p' "$log" | head -1)"
+    if [[ -n "$port" ]] && curl -fsS "http://127.0.0.1:$port/$ready" >/dev/null; then
+      forward_url="http://127.0.0.1:$port"
+      return 0
+    fi
+    kill -0 "$pid"
+    sleep 1
+  done
+  echo "Timed out forwarding $service" >&2
+  return 1
+}
+if [[ "$lane" == history ]]; then
+  forward_service ovn-light-loki 3100 ready
+  extra+=(--loki-url "$forward_url")
+fi
+forward_service ovn-light 8080 healthz
+python3 scripts/e2e-infra.py --lane "$lane" --url "$forward_url" --token-file "$work_dir/token" \
   --context "$context" --artifacts "$artifacts" "${extra[@]}"
