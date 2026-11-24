@@ -7,6 +7,8 @@ partial-offload packet deltas, and DOCA conntrack status by direction. Download
 that evidence as JSON for troubleshooting. These actions do not change OVS,
 clear counters, enable tracing, or restart services.
 
+Use **Run traffic test** to check a bounded cross-node TCP stream and inspect its per-node evidence. See [setup and result interpretation](traffic-tests.md).
+
 ## Collection
 
 OVN-Light reuses `ovs-appctl -t ovs-vswitchd dpctl/dump-flows -m`. It preserves

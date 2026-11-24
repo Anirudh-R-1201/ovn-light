@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/trozet/ovn-light/internal/app"
+	"github.com/trozet/ovn-light/internal/flowtest"
 	"github.com/trozet/ovn-light/internal/history"
 	"github.com/trozet/ovn-light/internal/kube"
 	"github.com/trozet/ovn-light/internal/model"
@@ -178,6 +179,13 @@ func run() error {
 	a, err := app.New(mode, *dataDir, client, collector, *writes)
 	if err != nil {
 		return err
+	}
+	if image := os.Getenv("OVN_LIGHT_TRAFFIC_TEST_IMAGE"); image != "" && a.Writes {
+		a.TrafficTest, err = flowtest.New(client.Core, image, os.Getenv("OVN_LIGHT_TRAFFIC_TEST_DEVICE_RESOURCE"), *dataDir)
+		if err != nil {
+			return err
+		}
+		go a.TrafficTest.Monitor(ctx)
 	}
 	if address := os.Getenv("OVN_LIGHT_LOKI_URL"); address != "" && mode == "live" {
 		a.History, err = history.New(history.Config{URL: address, Cluster: os.Getenv("OVN_LIGHT_LOKI_CLUSTER"), Tenant: os.Getenv("OVN_LIGHT_LOKI_TENANT"), CAFile: os.Getenv("OVN_LIGHT_LOKI_CA_FILE"), TokenFile: os.Getenv("OVN_LIGHT_LOKI_TOKEN_FILE")})

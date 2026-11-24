@@ -171,6 +171,12 @@ async function inspectTopologyEdge(id){
   root.append(text('h2',`${topologyCount(e.connections,'traffic group')} · ${networkName(e.network)}`),text('p',trafficStatus[e.status],'traffic-'+e.status));
   if(e.connections>members.length)root.append(text('p',`Showing ${members.length} groups. Filter by node and switch to pod detail to narrow this link.`,'note'));
   const picker=document.createElement('select');picker.id='topology-connection';picker.setAttribute('aria-label','Traffic group');for(const c of members)picker.append(new Option(`${topologyEndpoint(c.source,'Source')} → ${topologyEndpoint(c.destination,'Destination')} · ${topologyTransport(c)}`,c.id));if(members.some(c=>c.id===topologyState.connection))picker.value=topologyState.connection;root.append(picker);
+  root.append(button('Run traffic test',()=>{
+    const c=members.find(c=>c.id===picker.value);
+    const source=c?.source?.node || g.nodes.find(n=>n.id===e.source)?.node;
+    const destination=c?.destination?.node || g.nodes.find(n=>n.id===e.destination)?.node;
+    openTrafficTest(source,destination,e.network);
+  }));
   const body=text('div','','topology-connection-detail');body.id='topology-connection-detail';root.append(body);
   picker.onchange=()=>{topologyState.connection=picker.value;renderTopologyConnection(members.find(c=>c.id===picker.value));};picker.onchange();
  }catch(e){$('topology-detail').replaceChildren(text('p',e.message,'error'));}

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>OVN-Light · See what’s blocking</title><link rel="stylesheet" href="/style.css"><script defer src="/issues.js"></script><script defer src="/app.js"></script><script defer src="/topology.js"></script><script defer src="/topology-camera.js"></script><script defer src="/offload.js"></script><script defer src="/routing.js"></script><script defer src="/trace.js"></script><script defer src="/qos.js"></script><script defer src="/history.js"></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>OVN-Light · See what’s blocking</title><link rel="stylesheet" href="/style.css"><script defer src="/issues.js"></script><script defer src="/app.js"></script><script defer src="/topology.js"></script><script defer src="/topology-camera.js"></script><script defer src="/offload.js"></script><script defer src="/traffic-test.js"></script><script defer src="/routing.js"></script><script defer src="/trace.js"></script><script defer src="/qos.js"></script><script defer src="/history.js"></script></head>
 <body>
 <aside class="rail"><a class="brand" href="/" aria-label="OVN-Light home"><span class="oven">◉</span><span>OVN<span class="accent">-Light</span><small>NETWORK INSIGHT</small></span></a><nav><button class="nav active" data-page="issues">◎ <span>Issues</span><span id="issue-count" class="count">0</span></button><button class="nav" data-page="topology">⌘ <span>Topology</span></button><button class="nav" data-page="trace">↝ <span>Trace</span></button><button class="nav" data-page="routing">⇄ <span>Routing</span></button><button class="nav" data-page="egressip">⇥ <span>EgressIP</span></button><button class="nav" data-page="qos">≋ <span>QoS</span></button><button class="nav" data-page="offload">◈ <span>Hardware Offload</span></button><button class="nav" data-page="networks">◇ <span>Networks</span></button><button class="nav" data-page="history">◷ <span>History</span></button><button class="nav" data-page="changes">↗ <span>Changes</span></button><button class="nav" data-page="health">◌ <span>Collectors</span></button></nav><div class="rail-bottom"><span class="dot"></span> Datapath inspection<p>No packet mirroring.<br>No offload configuration changes.</p><button class="text" id="logout">Lock session</button></div></aside>
 <main><header><div class="breadcrumb">Workspace <span>/</span> <strong id="page-name">Issues</strong></div><div class="header-actions"><span id="mode" class="badge">Connecting</span><span id="updated"></span><button class="button secondary" id="refresh">↻ Refresh</button></div></header>
@@ -55,7 +55,7 @@
 <div id="egressip-coverage" class="note" role="status"></div><div id="egressip-list"></div><div id="egressip-pagination"></div><section id="egressip-detail" class="infra-detail" aria-live="polite"><h2>Select an EgressIP</h2></section>
 </section>
 <section class="page hidden" id="offload">
-<div class="heading"><div><p class="eyebrow">HARDWARE OFFLOAD</p><h1>Find the software fallback.</h1><p class="muted">Follow datapath stages and conntrack directions to see where traffic needs software.</p></div></div>
+<div class="heading"><div><p class="eyebrow">HARDWARE OFFLOAD</p><h1>Find the software fallback.</h1><p class="muted">Follow datapath stages and conntrack directions to see where traffic needs software.</p></div><button class="button primary" id="offload-run-test">Run traffic test</button></div>
 <div id="offload-coverage" class="callout" role="status"></div>
 <div class="offload-controls">
 <label>Node<select id="offload-node"><option value="">All nodes</option></select></label>
@@ -84,6 +84,12 @@
 </main>
 <dialog id="login"><form id="login-form"><span class="oven">◉</span><h2>Open the oven.</h2><p class="muted">Enter your OVN-Light access token. It stays in this tab’s session storage.</p><label>Access token<input id="token" type="password" autocomplete="current-password" required></label><p id="login-error" class="error"></p><button class="button primary" type="submit">Connect</button></form></dialog>
 <dialog id="detail"><div class="dialog-header"><p class="eyebrow">DROP EVIDENCE</p><button class="icon close" aria-label="Close">×</button></div><div id="detail-body"></div></dialog>
+<dialog id="traffic-test-dialog" aria-labelledby="traffic-test-title">
+<div class="dialog-header"><h2 id="traffic-test-title">Cross-node TCP test</h2><button class="icon close" aria-label="Close">×</button></div>
+<p>Send one TCP stream between two temporary test pods on the default network. The sender targets 1 Mbit/s for 120 seconds.</p>
+<form id="traffic-test-form"><div class="traffic-test-nodes"><label>Source node<select required id="traffic-test-source"></select></label><label>Destination node<select required id="traffic-test-destination"></select></label></div>
+<p id="traffic-test-message" class="note" role="status"></p><button id="traffic-test-submit" class="button primary" type="submit" disabled>Start TCP test</button></form>
+<div id="traffic-test-result"></div></dialog>
 <dialog id="offload-detail"><div class="dialog-header"><p class="eyebrow">OFFLOAD EVIDENCE</p><button class="icon close" aria-label="Close">×</button></div><div id="offload-detail-body"></div></dialog>
 <dialog id="intent">
   <div class="dialog-header"><p class="eyebrow">DESIRED CONNECTION</p><button class="icon close" aria-label="Close">×</button></div>

@@ -97,6 +97,9 @@ func Analyze(n model.NodeSnapshot, flows []datapath.Flow, paths []datapath.Path)
 			continue
 		}
 		o := model.OffloadPath{Node: n.Name, Datapath: n.Datapath, SampleComplete: n.Collection.FlowComplete, Complete: p.Complete && n.Collection.FlowComplete && len(p.Warnings) == 0, ObservedAt: flowTime(n), Warnings: append([]string{}, p.Warnings...), DiagnosticsAt: e.CapturedAt}
+		if t, ok := matchTuple(p.Identity); ok {
+			o.Tuple = &model.FlowTuple{Protocol: t.protocol, SourceIP: t.src, DestinationIP: t.dst, SourcePort: t.sport, DestinationPort: t.dport}
+		}
 		sig, ids := "", ""
 		hw, sw, partial, unknown, failure := false, false, false, false, false
 		for _, f := range p.Flows {

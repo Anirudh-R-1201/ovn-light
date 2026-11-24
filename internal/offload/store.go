@@ -141,6 +141,10 @@ func (s *Store) Update(r model.OffloadReport) []model.OffloadIssue {
 	s.history, s.report = next, r
 	return issues
 }
+
+// Latest is read under the app collection lock; callers must copy evidence they retain.
+func (s *Store) Latest() model.OffloadReport { return s.report }
+
 func value(v *uint64) uint64 {
 	if v == nil {
 		return 0

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trozet/ovn-light/internal/flowtest"
 	"github.com/trozet/ovn-light/internal/history"
 	"github.com/trozet/ovn-light/internal/kube"
 	"github.com/trozet/ovn-light/internal/model"
@@ -29,6 +30,7 @@ import (
 )
 
 type App struct {
+	TrafficTest   *flowtest.Manager
 	History       *history.Store
 	qos           qos.Report
 	routing       routing.Report
@@ -109,6 +111,7 @@ func (a *App) Load(s model.Snapshot) {
 	defer a.mu.Unlock()
 	a.offload.Grace = a.OffloadGrace
 	v.OffloadIssues = a.offload.Update(v.Offload)
+	a.TrafficTest.Observe(v, a.offload.Latest(), s.Inventory.Pods)
 	v.OffloadIssueCount = len(v.OffloadIssues)
 	if len(v.OffloadIssues) > 100 {
 		v.OffloadIssues = v.OffloadIssues[:100]

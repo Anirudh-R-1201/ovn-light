@@ -8,8 +8,8 @@ function offloadTime(t){return t&&Date.parse(t)>0?new Date(t).toLocaleTimeString
 function offloadRaw(label,raw){const d=text('details','');d.append(text('summary',label),text('pre',raw));return d}
 async function loadOffload(){
  const request=++offloadRequest;
- fillSelect($('offload-node'),state.nodes.map(n=>({label:n.name,value:n.name})),'All nodes');
- fillSelect($('offload-network'),state.networks.map(n=>({label:n.name,value:n.id})),'All networks');
+ fillSelect($('offload-node'),list(state.nodes).map(n=>({label:n.name,value:n.name})),'All nodes');
+ fillSelect($('offload-network'),list(state.networks).map(n=>({label:n.name,value:n.id})),'All networks');
  const q=new URLSearchParams({node:$('offload-node').value,network:$('offload-network').value,status:$('offload-status').value,search:$('offload-search').value,limit:'50'});
  try{
   const r=await api('offload?'+q);if(request!==offloadRequest)return;

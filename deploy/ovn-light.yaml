@@ -126,6 +126,7 @@ spec:
         args: ["--listen=:8080", "--enable-writes", "--data-dir=/data", "--interval=30s", "--daemonset-collectors"]
         envFrom:
         - configMapRef: {name: ovn-light-history, optional: true}
+        - configMapRef: {name: ovn-light-traffic-test, optional: true}
         env:
         - name: OVN_LIGHT_TOKEN
           valueFrom:

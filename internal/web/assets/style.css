@@ -41,3 +41,7 @@
 .history-row time{margin-right:12px;color:var(--muted)}
 .history-row strong{margin-left:10px}
 .history-policy{display:block;margin:6px 0 0}
+
+.traffic-test-nodes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:1rem}
+#traffic-test-result .record{margin-top:.8rem}
+#traffic-test-result summary{cursor:pointer}

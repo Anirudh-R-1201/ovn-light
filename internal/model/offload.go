@@ -62,7 +62,17 @@ type OffloadCT struct {
 	CapturedAt time.Time `json:"capturedAt,omitempty"`
 }
 
+// FlowTuple is emitted only when the reconstructed path fixes all five fields.
+type FlowTuple struct {
+	Protocol        string `json:"protocol"`
+	SourceIP        string `json:"sourceIP"`
+	DestinationIP   string `json:"destinationIP"`
+	SourcePort      string `json:"sourcePort"`
+	DestinationPort string `json:"destinationPort"`
+}
+
 type OffloadPath struct {
+	Tuple         *FlowTuple     `json:"tuple,omitempty"`
 	ID            string         `json:"id"`
 	Node          string         `json:"node"`
 	Network       string         `json:"network,omitempty"`

@@ -137,6 +137,8 @@ for each node. The central server keeps up to 2,000 traffic groups and 60 rounds
 over ten minutes. Standalone `capture` still supports a full raw diagnostic snapshot.
 See [collection and scaling](docs/architecture.md#topology-and-scaling).
 
+The **Run traffic test** button on Hardware Offload and topology links runs a rate-limited cross-node probe when the optional TFT runner is installed. See [traffic tests](docs/traffic-tests.md).
+
 ## Traffic history with Loki
 
 Open **History → Yesterday → Drops** to find traffic by network, pod, IP or policy name. Expand a result to see the workloads, the counter interval and the denying OVN ACL captured during collection. For a namespace default deny, the record includes the policies that selected the affected pod in that direction.
