@@ -124,6 +124,8 @@ spec:
         image: ovn-light:dev
         imagePullPolicy: IfNotPresent
         args: ["--listen=:8080", "--enable-writes", "--data-dir=/data", "--interval=30s", "--daemonset-collectors"]
+        envFrom:
+        - configMapRef: {name: ovn-light-history, optional: true}
         env:
         - name: OVN_LIGHT_TOKEN
           valueFrom:

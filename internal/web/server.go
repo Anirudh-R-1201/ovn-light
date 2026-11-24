@@ -58,6 +58,10 @@ func Handler(a *app.App, token string) http.Handler {
 		result, err := a.TraceCheck(r.Context(), "dns", trace.Request{}, request)
 		respond(w, result, err)
 	})
+	mux.HandleFunc("GET /api/history", func(w http.ResponseWriter, r *http.Request) {
+		result, err := a.History.Query(r.Context(), r.URL.Query())
+		respond(w, result, err)
+	})
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) { respond(w, a.State(), nil) })
 	mux.HandleFunc("GET /api/offload", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

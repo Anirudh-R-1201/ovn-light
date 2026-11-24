@@ -137,6 +137,12 @@ for each node. The central server keeps up to 2,000 traffic groups and 60 rounds
 over ten minutes. Standalone `capture` still supports a full raw diagnostic snapshot.
 See [collection and scaling](docs/architecture.md#topology-and-scaling).
 
+## Traffic history with Loki
+
+Open **History → Yesterday → Drops** to find traffic by network, pod, IP or policy name. Expand a result to see the workloads, the counter interval and the denying OVN ACL captured during collection. For a namespace default deny, the record includes the policies that selected the affected pod in that direction.
+
+History is opt-in. The central server can write to an existing Loki instance. The two-node KIND example provides a single Loki pod capped at 256 MiB with 72-hour retention. See [Loki configuration, coverage and demo setup](docs/history.md).
+
 ## UDNs and network connections
 
 Proposals opened from a drop keep its observed network fixed. The server infers the policy type from the actual pod attachment and records the scope in the proposal:

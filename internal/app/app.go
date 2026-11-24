@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trozet/ovn-light/internal/history"
 	"github.com/trozet/ovn-light/internal/kube"
 	"github.com/trozet/ovn-light/internal/model"
 	"github.com/trozet/ovn-light/internal/offload"
@@ -28,6 +29,7 @@ import (
 )
 
 type App struct {
+	History       *history.Store
 	qos           qos.Report
 	routing       routing.Report
 	OffloadGrace  time.Duration
@@ -100,6 +102,9 @@ func (a *App) Load(s model.Snapshot) {
 	}
 	report := routing.Analyze(s, v, &a.routing)
 	qosReport := qos.Analyze(s)
+	if a.History != nil {
+		a.History.Record(v, s.Inventory)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.offload.Grace = a.OffloadGrace

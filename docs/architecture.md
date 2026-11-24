@@ -98,7 +98,7 @@ Collection never installs flow rules, enables packet sampling, clears counters o
 
 This cannot guarantee visibility of every hardware drop. Device ACLs outside OVS, packets dropped before flow installation, driver aggregation, delayed counters and expired cache entries are outside coverage. Translation-cache availability and provider output vary. KIND validates only the software path. Synthetic offload fixtures test interpretation; device validation remains separate work. See [hardware offload diagnostics](offload.md) for collection, correlation and alert semantics.
 
-Traffic history is bounded and in memory. This release has no durable traffic time series, L7 parser, FQDN policy engine, automatic application dependency learning, multi-cluster relay, per-user Kubernetes impersonation or operator lifecycle management.
+The live topology keeps a bounded in-memory window. The central server can also archive counter observations and their policy evidence for historical lookup. See [traffic history with Loki](history.md). This release has no L7 parser, FQDN policy engine, automatic application dependency learning, multi-cluster relay, per-user Kubernetes impersonation or operator lifecycle management.
 
 ## Topology and scaling
 

@@ -1,0 +1,141 @@
+# Optional single-process Loki for the two-node KIND demo.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ovn-light-loki
+  namespace: ovn-light
+data:
+  config.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+      log_level: warn
+    common:
+      path_prefix: /data
+      replication_factor: 1
+      ring:
+        instance_addr: 127.0.0.1
+        kvstore:
+          store: inmemory
+      storage:
+        filesystem:
+          chunks_directory: /data/chunks
+          rules_directory: /data/rules
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    ingester:
+      chunk_idle_period: 10m
+      chunk_target_size: 262144
+      wal:
+        replay_memory_ceiling: 32MB
+    querier:
+      max_concurrent: 1
+    limits_config:
+      retention_period: 72h
+      max_query_parallelism: 1
+      tsdb_max_query_parallelism: 1
+    compactor:
+      working_directory: /data/compactor
+      retention_enabled: true
+      delete_request_store: filesystem
+      retention_delete_worker_count: 1
+    analytics:
+      reporting_enabled: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ovn-light-loki
+  namespace: ovn-light
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 1Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ovn-light-loki
+  namespace: ovn-light
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: ovn-light-loki}
+  template:
+    metadata:
+      labels: {app: ovn-light-loki}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: loki
+        image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+        args: [-config.file=/etc/ovn-light/config.yaml]
+        env:
+        - {name: GOMAXPROCS, value: "1"}
+        - {name: GOMEMLIMIT, value: 160MiB}
+        resources:
+          requests: {cpu: 25m, memory: 64Mi}
+          limits: {cpu: 500m, memory: 256Mi}
+        ports: [{name: http, containerPort: 3100}]
+        readinessProbe:
+          httpGet: {path: /ready, port: http}
+          periodSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+        - {name: config, mountPath: /etc/ovn-light, readOnly: true}
+        - {name: data, mountPath: /data}
+      volumes:
+      - name: config
+        configMap: {name: ovn-light-loki}
+      - name: data
+        persistentVolumeClaim: {claimName: ovn-light-loki}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ovn-light-loki
+  namespace: ovn-light
+spec:
+  selector: {app: ovn-light-loki}
+  ports: [{name: http, port: 3100, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ovn-light-loki
+  namespace: ovn-light
+spec:
+  podSelector:
+    matchLabels: {app: ovn-light-loki}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels: {app: ovn-light}
+    ports: [{protocol: TCP, port: 3100}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ovn-light-history
+  namespace: ovn-light
+data:
+  OVN_LIGHT_LOKI_URL: http://ovn-light-loki.ovn-light.svc:3100
+  OVN_LIGHT_LOKI_CLUSTER: ovn-light-demo

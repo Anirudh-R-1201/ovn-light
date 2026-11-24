@@ -96,3 +96,37 @@ func policiesForScope(inv model.Inventory, scope *Scope) ([]netv1.NetworkPolicy,
 	}
 	return policies, nil
 }
+
+// SelectingPolicies records which policies isolated this attachment in the
+// observed direction. A namespace default-deny ACL can be shared by all of them.
+func SelectingPolicies(inv model.Inventory, endpoint model.Endpoint, direction string) ([]string, error) {
+	if endpoint.UID == "" || (endpoint.PolicyKind != "NetworkPolicy" && endpoint.PolicyKind != "MultiNetworkPolicy") {
+		return nil, fmt.Errorf("attachment policy scope is unknown")
+	}
+	if endpoint.PolicyKind == "MultiNetworkPolicy" {
+		if _, ok := inv.Resources["multi-networkpolicies"]; !ok {
+			return nil, fmt.Errorf("MultiNetworkPolicy inventory unavailable")
+		}
+	}
+	var d netv1.PolicyType
+	switch strings.ToLower(direction) {
+	case "ingress":
+		d = netv1.PolicyTypeIngress
+	case "egress":
+		d = netv1.PolicyTypeEgress
+	default:
+		return nil, fmt.Errorf("policy direction is unknown")
+	}
+	policies, err := policiesForScope(inv, &Scope{Network: endpoint.Network, PolicyKind: endpoint.PolicyKind})
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, np := range policies {
+		if np.Namespace == endpoint.Namespace && selected(np.Spec.PodSelector, endpoint.Labels) && hasDirection(np, d) {
+			names = append(names, endpoint.PolicyKind+" "+np.Namespace+"/"+np.Name)
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}

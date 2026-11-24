@@ -17,6 +17,7 @@ check:
 	node --check internal/web/assets/routing.js
 	node --check internal/web/assets/trace.js
 	node --check internal/web/assets/qos.js
+	node --check internal/web/assets/history.js
 demo:
 	$(GO) run ./cmd/ovn-light --demo
 image: build
