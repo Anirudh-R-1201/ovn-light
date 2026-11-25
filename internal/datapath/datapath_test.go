@@ -181,3 +181,15 @@ ufid:b, recirc_id(0x2),in_port(4),ipv4(proto=6), packets:5, actions:drop`)
 		t.Fatalf("paths=%d", len(paths))
 	}
 }
+
+func TestHashSelectsANewDPHash(t *testing.T) {
+	fs, errs := Parse(`ufid:a, recirc_id(0),dp_hash(0x1/0xf),in_port(4),ipv4(src=10.0.0.2,dst=10.96.0.10,proto=6),tcp(dst=80), packets:5, actions:hash(l4(0)),recirc(0x3)
+ufid:b, recirc_id(0x3),dp_hash(0x2/0xf),in_port(4),ipv4(proto=6), packets:5, actions:drop`)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	paths := Reconstruct(fs)
+	if len(paths) != 1 || !paths[0].Complete || len(paths[0].Warnings) > 0 {
+		t.Fatalf("%+v", paths)
+	}
+}

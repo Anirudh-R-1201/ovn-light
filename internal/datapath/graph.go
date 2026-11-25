@@ -243,6 +243,9 @@ func transform(match map[string]string, actions string, names map[string]bool) (
 				}
 				warnings = append(warnings, "Conntrack NAT may translate addresses or ports; only explicit matches after NAT identify the translated tuple.")
 			}
+		case strings.HasPrefix(a, "hash("):
+			// Load-balancer group selection; the next stage matches the new dp_hash.
+			delete(m, "dp_hash")
 		case a == "ct_clear":
 			for _, k := range []string{"ct_state", "ct_mark", "ct_label", "ct_zone"} {
 				delete(m, k)
