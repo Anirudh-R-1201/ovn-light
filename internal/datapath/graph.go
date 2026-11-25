@@ -3,6 +3,7 @@ package datapath
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -180,6 +181,10 @@ func actionBranches(actions string, depth int) []actionBranch {
 			expanded := append(append([]string{}, parts[:i]...), choice[3:len(choice)-1])
 			expanded = append(expanded, parts[i+1:]...)
 			for _, b := range actionBranches(strings.Join(expanded, ","), depth+1) {
+				// Both outcomes often share the same actions; follow them once.
+				if slices.ContainsFunc(out, func(o actionBranch) bool { return o.actions == b.actions }) {
+					continue
+				}
 				b.conditional = true
 				out = append(out, b)
 				if len(out) >= 16 {

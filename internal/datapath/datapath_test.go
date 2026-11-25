@@ -170,3 +170,14 @@ func TestDOCAOffloadEvidence(t *testing.T) {
 		t.Fatal("invalid partial counter accepted")
 	}
 }
+
+func TestIdenticalPacketLengthBranchesFollowedOnce(t *testing.T) {
+	fs, errs := Parse(`ufid:a, recirc_id(0),in_port(4),ipv4(src=10.0.0.2,dst=10.0.0.3,proto=6),tcp(dst=80), packets:5, actions:check_pkt_len(size=1514,gt(ct(zone=1,nat),recirc(0x2)),le(ct(zone=1,nat),recirc(0x2)))
+ufid:b, recirc_id(0x2),in_port(4),ipv4(proto=6), packets:5, actions:drop`)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if paths := Reconstruct(fs); len(paths) != 1 {
+		t.Fatalf("paths=%d", len(paths))
+	}
+}
