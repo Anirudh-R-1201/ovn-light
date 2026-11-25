@@ -193,3 +193,21 @@ ufid:b, recirc_id(0x3),dp_hash(0x2/0xf),in_port(4),ipv4(proto=6), packets:5, act
 		t.Fatalf("%+v", paths)
 	}
 }
+
+func TestVLANPushAndPop(t *testing.T) {
+	fs, errs := Parse(`ufid:a, recirc_id(0),in_port(pod),eth_type(0x0800),ipv4(src=10.0.0.2,dst=10.1.0.3,proto=6), packets:5, actions:push_vlan(vid=10,pcp=0),uplink
+ufid:b, recirc_id(0),in_port(uplink),eth_type(0x8100),vlan(vid=10,pcp=0),encap(eth_type(0x0800),ipv4(src=10.1.0.3,dst=10.0.0.2,proto=6)), packets:5, actions:pop_vlan,pod`)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	paths := ReconstructTraffic(fs, "pod", "uplink")
+	if len(paths) != 2 {
+		t.Fatalf("%+v", paths)
+	}
+	for _, p := range paths {
+		want := map[string]string{"uplink": "10", "pod": ""}[p.Output]
+		if p.Identity["vlan.vid"] != want || len(p.Warnings) > 0 {
+			t.Fatalf("output %s: vlan=%q warnings=%v", p.Output, p.Identity["vlan.vid"], p.Warnings)
+		}
+	}
+}

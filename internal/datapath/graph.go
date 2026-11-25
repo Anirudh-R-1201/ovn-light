@@ -246,6 +246,14 @@ func transform(match map[string]string, actions string, names map[string]bool) (
 		case strings.HasPrefix(a, "hash("):
 			// Load-balancer group selection; the next stage matches the new dp_hash.
 			delete(m, "dp_hash")
+		case strings.HasPrefix(a, "push_vlan("):
+			flatten("", "vlan"+a[len("push_vlan"):], m)
+		case a == "pop_vlan":
+			for k := range m {
+				if strings.HasPrefix(k, "vlan.") {
+					delete(m, k)
+				}
+			}
 		case a == "ct_clear":
 			for _, k := range []string{"ct_state", "ct_mark", "ct_label", "ct_zone"} {
 				delete(m, k)
